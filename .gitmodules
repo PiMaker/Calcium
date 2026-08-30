@@ -1,0 +1,3 @@
+[submodule "vendor/win32-simple-gui"]
+	path = vendor/win32-simple-gui
+	url = git@github.com:PiMaker/win32-simple-gui.git

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>driver_01calcium</AssemblyName>
+    <RootNamespace>Calcium</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <Target Name="GenerateIcon" BeforeTargets="BeforeBuild">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\icon-gen.ps1&quot;" />
+  </Target>
+
+  <ItemGroup>
+    <Compile Include="..\vendor\MinHook.NET\**\*.cs" />
+    <Compile Include="..\vendor\win32-simple-gui\src\**\*.cs" />
+    <Compile Include="..\Version.cs" />
+  </ItemGroup>
+
+</Project>

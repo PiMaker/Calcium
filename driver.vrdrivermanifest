@@ -1,0 +1,7 @@
+{
+	"alwaysActivate": true,
+	"name": "01calcium",
+	"directory": "",
+	"resourceOnly": false,
+	"activateOtherDriversWhenEnabled": true
+}

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>calcium-installer</AssemblyName>
+    <RootNamespace>CalciumInstaller</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\calcium-driver\src\frontend\Icon.cs" />
+  </ItemGroup>
+
+  <!-- driver dlls are gathered into driver/ by build-installer.ps1; manifest/settings live at the repo root -->
+  <ItemGroup>
+    <EmbeddedResource Include="driver\*.dll" LogicalName="%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\driver.vrdrivermanifest" LogicalName="driver.vrdrivermanifest" />
+    <EmbeddedResource Include="..\default.vrsettings" LogicalName="default.vrsettings" />
+    <Compile Include="..\vendor\win32-simple-gui\src\**\*.cs" />
+    <Compile Include="..\Version.cs" />
+  </ItemGroup>
+
+</Project>

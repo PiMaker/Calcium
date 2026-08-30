@@ -1,0 +1,59 @@
+name: release
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+
+      - name: Compute next version
+        id: ver
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+          # 1 + null = 1 when no tags exist yet
+          $n = 1 + ((git tag --list 'v*' | ForEach-Object { [int]$_.Substring(1) } | Measure-Object -Maximum).Maximum)
+          "n=$n" >> $env:GITHUB_OUTPUT
+
+      - name: Bump version in Version.cs
+        shell: pwsh
+        run: |
+          $path = "Version.cs"
+          $content = (Get-Content $path -Raw) -replace 'public const string Version = "\d+";', ('public const string Version = "${{ steps.ver.outputs.n }}";')
+          Set-Content $path $content -NoNewline
+
+      - name: Commit version bump
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Version.cs
+          git commit -m "version ${{ steps.ver.outputs.n }}"
+          git push
+
+      - name: Build
+        shell: pwsh
+        run: ./build-installer.ps1
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: calcium-installer
+          path: calcium-installer/bin/Release/net10.0-windows/win-x64/publish/calcium-installer.exe
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v${{ steps.ver.outputs.n }}" "calcium-installer/bin/Release/net10.0-windows/win-x64/publish/calcium-installer.exe" --title "Version ${{ steps.ver.outputs.n }}" --generate-notes

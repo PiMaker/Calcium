@@ -1,0 +1,341 @@
+using System.Drawing;
+using System.Numerics;
+using System.Text;
+using Win32.SimpleGui;
+
+public class Frontend : IDisposable
+{
+    // dark theme
+    static readonly Color BackgroundColor = Color.FromArgb(255, 48, 48, 48);
+    static readonly Color ElementColor = Color.FromArgb(255, 64, 64, 64);
+    static readonly Color ForegroundColor = Color.White;
+
+    readonly Thread _thread;
+    readonly ManualResetEventSlim _windowCreated = new(false, 0);
+    volatile Window _window;
+    volatile bool _closeConfirmed; // set by Dispose to bypass the close confirmation
+
+    ListBox _deviceList;
+    Label _helpText;
+    Button _calibrateButton;
+    Button _resetCalibrationButton;
+    Checkbox _minimizeOnStartup;
+
+    readonly List<Device> _deviceCache = new();
+    readonly List<string> _rows = new();
+    readonly StringBuilder _row = new();
+
+    public Frontend()
+    {
+        _thread = new Thread(Run) { IsBackground = true, Name = "Calcium Frontend" };
+        _thread.SetApartmentState(ApartmentState.STA); // Win32 UI thread
+        _thread.Start();
+    }
+
+    void Run()
+    {
+        try
+        {
+            Application.EnableHiDPISupportForCurrentProcess();
+            Application.EnableVisualStylesForCurrentThread();
+            Application.EnableDarkMode();
+
+            using var icon = new Win32.SimpleGui.Icon(Icon.Data);
+            using var fontUI = new Font("Segoe UI", 12f);
+            using var fontSmall = new Font("Segoe UI", 9f);
+            using var fontMono = new Font("Consolas", 15f);
+
+            var window = new Window("Calcium", 620, 410, fontUI, icon)
+            {
+                CanMaximize = false,
+                CanResize = false,
+            };
+            window.OnCloseRequest += () =>
+                _closeConfirmed || window.MessageBox("Close Calcium",
+                    "Closing this window stops tracking correction until you restart SteamVR.",
+                    icon, MessageBoxIcon.Question);
+
+            var versionLabel = new Label("v" + CalciumVersion.Version)
+            {
+                X = 590, Y = 380, Width = 40,
+                Foreground = Color.FromArgb(160, 160, 160),
+                Background = BackgroundColor,
+            };
+            window.Children.Add(versionLabel);
+
+            var background = new Panel(0, 0, window.Width, window.Height, BackgroundColor);
+            window.Children.Add(background);
+
+            var layout = new VerticalLayout { Width = BaseLayout.Fill, Height = BaseLayout.Fill, Margin = new Margin(8, 8) };
+            window.Children.Add(layout);
+
+            layout.Children.Add(new Label("Select Tracker mounted to Headset:")
+            {
+                Width = BaseLayout.Fill,
+                Height = 28,
+                Foreground = ForegroundColor,
+                Background = BackgroundColor,
+            });
+
+            _deviceList = new ListBox
+            {
+                Width = BaseLayout.Fill,
+                Height = BaseLayout.Fill,
+                Font = fontMono,
+                Foreground = ForegroundColor,
+                Background = ElementColor,
+            };
+            _deviceList.OnSelectedIndexChanged += (_, i) =>
+            {
+                var index = i - 1; // item 0 is the Disabled row
+                State.Current.ActiveTargetIndex = index >= 0 && index < _deviceCache.Count ? _deviceCache[index].ID : 0;
+            };
+            layout.Children.Add(_deviceList);
+
+            _helpText = new Label
+            {
+                Width = BaseLayout.Fill,
+                Height = 52,
+                Foreground = ForegroundColor,
+                Background = BackgroundColor,
+            };
+            layout.Children.Add(_helpText);
+
+            var buttons = new HorizontalLayout { Width = BaseLayout.Fill, Height = 40, Spacing = 8 };
+            layout.Children.Add(buttons);
+
+            _calibrateButton = new Button("Calibrate") { Width = 150, Height = 40, Disabled = true };
+            _calibrateButton.OnClick += _ => Calibrate();
+            buttons.Children.Add(_calibrateButton);
+
+            _resetCalibrationButton = new Button("Reset Calibration") { Width = 190, Height = 40, Disabled = true, Margin = new Margin(8, 0) };
+            _resetCalibrationButton.OnClick += _ => ResetCalibration();
+            buttons.Children.Add(_resetCalibrationButton);
+
+            _minimizeOnStartup = new Checkbox()
+            {
+                Width = 20,
+                Height = 40,
+                Foreground = ForegroundColor,
+                Background = BackgroundColor,
+                Margin = new Margin(6, 0, -4, 0),
+            };
+            var minimizeLabel = new Label("Minimize on Startup", centerVertically: true)
+            {
+                Width = 180,
+                Height = 37,
+                Foreground = ForegroundColor,
+                Background = BackgroundColor,
+            };
+            buttons.Children.Add(_minimizeOnStartup);
+            buttons.Children.Add(minimizeLabel);
+            _minimizeOnStartup.Checked = State.Current.MinimizeOnStartup;
+            _minimizeOnStartup.OnCheckedChanged += (_, on) => SetMinimizeOnStartup(on);
+
+            window.Arrange(); // run layout pass once
+            background.SendToBack();
+            _window = window;
+            _windowCreated.Set();
+
+            Application.ScheduleTimer(RefreshDevices, 250);
+            RefreshDevices();
+            if (State.Current.MinimizeOnStartup)
+                window.State = Window.WindowState.Minimized;
+
+            Utilities.Log("Starting frontend event loop");
+            Application.RunEventLoop(); // blocks until the window closes
+            State.Current.ActiveTargetIndex = 0; // UI closed: disable tracking
+            _window = null;
+        }
+        catch (Exception ex)
+        {
+            Utilities.Log($"Frontend error: {ex}");
+        }
+        finally
+        {
+            _windowCreated.Set(); // release Dispose even if startup failed
+        }
+    }
+
+    void RefreshDevices()
+    {
+        try
+        {
+            _deviceCache.Clear();
+            foreach (var dev in State.Current.Devices.Values)
+            {
+                if (dev.DeviceClass is OpenVr.DeviceClassController or OpenVr.DeviceClassGenericTracker)
+                    _deviceCache.Add(dev);
+
+                CheckDeviceChanged(dev);
+            }
+            _deviceCache.Sort(static (a, b) => a.ID.CompareTo(b.ID));
+
+            // set rows in place when the device count is stable, reset the list when it changed;
+            // per-tick garbage is limited to the item strings themselves
+            _rows.Clear();
+            _rows.Add("Space Correction Disabled");
+            foreach (var d in _deviceCache)
+                AppendDeviceRow(d);
+
+            var items = _deviceList.Items;
+            if (items.Count != _rows.Count)
+            {
+                items.Clear();
+                foreach (var row in _rows) items.Add(row);
+            }
+            else
+            {
+                for (var i = 0; i < _rows.Count; i++)
+                    if (items[i] != _rows[i])
+                        items[i] = _rows[i];
+            }
+            _deviceList.SelectedIndex = SelectedIndex();
+
+            var foundActive = false;
+            foreach (var dev in _deviceCache)
+            {
+                if (State.Current.ActiveTargetIndex == dev.ID)
+                    foundActive = true;
+            }
+
+            _calibrateButton.Disabled = State.Current.Calibrate || State.Current.ActiveTargetIndex == 0;
+
+            // calibration logic
+            if (State.Current.Calibrate)
+            {
+                var collected = Calibration.CollectedSampleCount;
+                if (collected >= Calibration.MaxSamples - 16 /* leeway */)
+                {
+                    State.Current.FinishCalibration();
+                }
+            }
+
+            var hasCalibration = !State.Current.ActiveOffset.Value.IsIdentity;
+            _resetCalibrationButton.Disabled = !hasCalibration;
+
+            // set help text based on current app status
+            if (!foundActive && !string.IsNullOrEmpty(State.Current.ActiveSerialNumber))
+            {
+                _helpText.Text = "A mounted tracker was saved by serial number, but isn't available yet. Make sure it's turned on and tracking! ⌛";
+            }
+            else if (State.Current.ActiveTargetIndex == 0)
+            {
+                _helpText.Text = "Select the device that you have attached to your headset in the list above. To identify it, try shaking your head and watching the 'Motion' column! 🔍";
+            }
+            else if (State.Current.Calibrate)
+            {
+                var samples = Calibration.CollectedSampleCount;
+                _helpText.Text = $"Calibration in progress: {samples/(float)Calibration.MaxSamples:P2}\nGently move and rotate your head!";
+            }
+            else if (State.Current.ActiveTargetIndex != 0)
+            {
+                if (!hasCalibration)
+                {
+                    _helpText.Text = "No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup.";
+                }
+                else
+                {
+                    _helpText.Text = "Calibration found for active device. Everything should be working! ✅";
+                }
+            }
+            else
+            {
+                _helpText.Text = "Unknown state? ⚠️";
+            }
+        }
+        catch (Exception ex)
+        {
+            Utilities.Log($"An error occurred in frontend loop: {ex.Message}");
+        }
+    }
+
+    // builds one ListBox row: id right-3, two spaces, tracking space left-20, serial left-32,
+    // class left-10, motion "F2" right-6; no intermediate strings beyond the row itself
+    void AppendDeviceRow(Device d)
+    {
+        _row.Clear();
+        if (d.ID >= 100) _row.Append(d.ID);
+        else if (d.ID >= 10) _row.Append("  ").Append(d.ID);
+        else _row.Append("   ").Append(d.ID);
+        _row.Append("  ");
+        AppendField(d.TrackingSpace, 20);
+        _row.Append(' ');
+        AppendField(d.SerialNumber, 32);
+        _row.Append(' ');
+        AppendField(ClassToString(d.DeviceClass), 10);
+        _row.Append(d.MotionEstimate.ToString("F2"));
+        _rows.Add(_row.ToString());
+
+        void AppendField(string text, int width)
+        {
+            _row.Append(text);
+            for (var pad = width - text.Length; pad > 0; pad--)
+                _row.Append(' ');
+        }
+    }
+
+    int SelectedIndex()
+    {
+        var target = State.Current.ActiveTargetIndex;
+        if (target == 0) return 0;
+        for (var i = 0; i < _deviceCache.Count; i++)
+        {
+            if (_deviceCache[i].ID == target)
+                return i + 1;
+        }
+        return -1;
+    }
+
+    // TODO: Maybe remove? Doesn't seem necessary. But cheap.
+    static bool CheckDeviceChanged(Device dev)
+    {
+        var id = dev.ID;
+        var ct = DeviceProperties.GetContainer(id);
+        var deviceClass = DeviceProperties.GetInt(ct, id, OpenVr.PropDeviceClass);
+        var serialNumber = DeviceProperties.GetString(ct, id, OpenVr.PropSerialNumber);
+        var trackingSpace = DeviceProperties.GetString(ct, id, OpenVr.PropTrackingSystemName);
+        if (deviceClass != dev.DeviceClass ||
+            serialNumber != dev.SerialNumber ||
+            trackingSpace != dev.TrackingSpace)
+        {
+            Utilities.Log("Device changed: " + id);
+            State.Current.Devices.TryRemove(id, out _);
+            return true;
+        }
+        return false;
+    }
+
+    static string ClassToString(int deviceClass) => deviceClass switch
+    {
+        OpenVr.DeviceClassController => "Controller",
+        OpenVr.DeviceClassGenericTracker => "Tracker",
+        _ => deviceClass.ToString(),
+    };
+
+    void Calibrate()
+    {
+        State.Current.BeginCalibration();
+    }
+
+    void ResetCalibration()
+    {
+        State.Current.ActiveOffset.Set(Matrix4x4.Identity);
+        _resetCalibrationButton.Disabled = true;
+    }
+
+    void SetMinimizeOnStartup(bool minimize)
+    {
+        State.Current.MinimizeOnStartup = minimize;
+        State.Current.WriteToDisk();
+    }
+
+    public void Dispose()
+    {
+        _windowCreated.Wait();
+        _closeConfirmed = true; // driver unload: close without confirmation
+        if (_window is Window window)
+            window.Dispose(); // thread-safe: posts WM_CLOSE
+        _thread?.Join();
+    }
+}

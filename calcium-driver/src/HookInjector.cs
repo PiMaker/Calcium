@@ -26,7 +26,7 @@ public static unsafe class HookInjector
 
     // Fetches IVRServerDriverHost_006 during Init and hooks the returned
     // host's TrackedDevicePoseUpdated for the process lifetime. All driver-host
-    // instances share that vtable, so one hook sees every driver's pose pushes.
+    // instances share the native function, so we see every driver's pose pushes.
     public static void ArmPoseHook(DriverContext* ctx)
     {
         try

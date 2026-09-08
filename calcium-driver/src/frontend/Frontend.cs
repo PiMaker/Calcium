@@ -215,7 +215,7 @@ public class Frontend : IDisposable
             _resetCalibrationButton.Disabled = !hasCalibration;
 
             // set help text based on current app status
-            if (!foundActive && !string.IsNullOrEmpty(State.Current.ActiveSerialNumber))
+            if (!foundActive && !string.IsNullOrEmpty(Volatile.Read(ref State.Current.ActiveSerialNumber)))
             {
                 _helpText.Text = "A mounted tracker was saved by serial number, but isn't available yet. Make sure it's turned on and tracking! ⌛";
             }
@@ -236,7 +236,7 @@ public class Frontend : IDisposable
                 }
                 else
                 {
-                    _helpText.Text = "Calibration found for active device. Everything should be working! ✅";
+                    _helpText.Text = "Calibration found for active device. Everything should be working! ✔️";
                 }
             }
             else
@@ -259,12 +259,12 @@ public class Frontend : IDisposable
         else if (d.ID >= 10) _row.Append("  ").Append(d.ID);
         else _row.Append("   ").Append(d.ID);
         _row.Append("  ");
-        AppendField(d.TrackingSpace, 20);
+        AppendField(d.TrackingSpace, 14);
         _row.Append(' ');
-        AppendField(d.SerialNumber, 32);
+        AppendField(d.SerialNumber, 28);
         _row.Append(' ');
         AppendField(ClassToString(d.DeviceClass), 10);
-        _row.Append(d.MotionEstimate.ToString("F2"));
+        _row.Append(d.MotionEstimate.ToString("F3"));
         _rows.Add(_row.ToString());
 
         void AppendField(string text, int width)

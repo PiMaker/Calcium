@@ -70,6 +70,8 @@ public static class Utilities
         if (Matrix4x4.Decompose(a, out var aScale, out var aRotation, out var aTranslation) &&
             Matrix4x4.Decompose(b, out var bScale, out var bRotation, out var bTranslation))
         {
+            var translationDelta = Vector3.Distance(aTranslation, bTranslation);
+            t *= Math.Clamp(1f - translationDelta * 2f, 0.5f, 1f); // slightly more linear correction motion, looks better
             var scale = Vector3.Lerp(aScale, bScale, t);
             var rotation = Quaternion.Slerp(aRotation, bRotation, t);
             var translation = Vector3.Lerp(aTranslation, bTranslation, t);

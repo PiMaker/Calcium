@@ -5,7 +5,7 @@ public static class PoseHook
     const float MaxMotionEstimate = 0.666f;
     const float MotionDecay = 0.993f;
 
-    const float MinBlendFactor = 0.0005f;
+    const float MinBlendFactor = 0.0008f;
     const float BlendDecay = 0.985f;
     static volatile float BlendFactor = 1f;
 

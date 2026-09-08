@@ -14,7 +14,7 @@ public static class Calibration
     internal static Lock CalibrationLock = new();
     internal static bool Active => _active;
 
-    public const int MaxSamples = 384;
+    public const int MaxSamples = 512;
     public static int CollectedSampleCount => Pairs.Count;
 
     internal static void Stop()

@@ -11,9 +11,11 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          submodules: 'recursive'
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.x
 
@@ -47,7 +49,7 @@ jobs:
         run: ./build-installer.ps1
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: calcium-installer
           path: calcium-installer/bin/Release/net10.0-windows/win-x64/publish/calcium-installer.exe

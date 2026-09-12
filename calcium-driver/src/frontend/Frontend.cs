@@ -206,17 +206,23 @@ public class Frontend : IDisposable
                     foundActive = true;
             }
 
-            _calibrateButton.Disabled = State.Current.Calibrate || State.Current.ActiveTargetIndex == 0;
+            var calibrationState = State.Current.CalibrateUpTo;
 
             // calibration logic
-            if (State.Current.Calibrate)
+            bool waitingOnStepUp = false;
+            if (calibrationState > 0)
             {
                 var collected = Calibration.CollectedSampleCount;
-                if (collected >= Calibration.MaxSamples - 16 /* leeway */)
+                if (collected >= Calibration.MaxSamples * calibrationState)
                 {
-                    State.Current.FinishCalibration();
+                    if (calibrationState < Calibration.CalibrationSteps)
+                        waitingOnStepUp = true;
+                    else
+                        State.Current.FinishCalibration();
                 }
             }
+            _calibrateButton.Disabled = State.Current.ActiveTargetIndex == 0 || (!waitingOnStepUp && calibrationState > 0);
+            _calibrateButton.Text = waitingOnStepUp ? "Continue" : "Calibrate";
 
             var hasCalibration = !State.Current.ActiveOffset.Value.IsIdentity;
             _resetCalibrationButton.Disabled = !hasCalibration;
@@ -231,10 +237,17 @@ public class Frontend : IDisposable
             {
                 _helpText.Text = "Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍";
             }
-            else if (State.Current.Calibrate)
+            else if (calibrationState > 0)
             {
-                var samples = Calibration.CollectedSampleCount;
-                _helpText.Text = $"Calibration in progress: {samples/(float)Calibration.MaxSamples:P2}\nGently move and rotate your head! 🔃";
+                if (waitingOnStepUp)
+                {
+                    _helpText.Text = $"Calibration step {calibrationState} of {Calibration.CalibrationSteps} complete. Move somewhere else in your playspace and press 'Continue'! ⏭️";
+                }
+                else
+                {
+                    var samples = Calibration.CollectedSampleCount;
+                    _helpText.Text = $"Calibration step {calibrationState} of {Calibration.CalibrationSteps}: {samples/(float)(Calibration.MaxSamples * calibrationState):P2}\nGently move and rotate your head! 🔃";
+                }
             }
             else if (State.Current.ActiveTargetIndex != 0)
             {
@@ -334,7 +347,11 @@ public class Frontend : IDisposable
 
     void Calibrate()
     {
-        State.Current.BeginCalibration();
+        var state = State.Current.CalibrateUpTo;
+        if (state == 0)
+            State.Current.BeginCalibration();
+        else
+            State.Current.StepUpCalibration();
     }
 
     void ResetCalibration()

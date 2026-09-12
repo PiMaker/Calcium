@@ -14,7 +14,8 @@ public static class Calibration
     internal static Lock CalibrationLock = new();
     internal static bool Active => _active;
 
-    public const int MaxSamples = 512;
+    public const int CalibrationSteps = 4;
+    public const int MaxSamples = 128;
     public static int CollectedSampleCount => Pairs.Count;
 
     static readonly double[,] _rotationScratch4x4 = new double[4, 4];
@@ -74,7 +75,7 @@ public static class Calibration
     //    units: scale * (a * Rm).
     //    Each pair gives 3 equations in the 4 unknowns (t, scale), stacked
     //    into normal equations and solved as a linear system.
-    internal static bool Update(Matrix4x4 targetInverse, Matrix4x4 hmd, out Matrix4x4 result)
+    internal static bool Update(Matrix4x4 targetInverse, Matrix4x4 hmd, out Matrix4x4 result, int calibrateUpTo)
     {
         result = Matrix4x4.Identity;
 
@@ -107,7 +108,7 @@ public static class Calibration
         // information; they only dilute the solve with noise.
         if (RotationAngle(b) < MinimumRotation) return false;
 
-        if (Pairs.Count < MaxSamples)
+        if (Pairs.Count < MaxSamples * calibrateUpTo)
         {
             AddRotationConstraint(a, b);
             Pairs.Enqueue((a, b));

@@ -7,7 +7,7 @@ public class State
 
     public string ActiveSerialNumber = "";
     public volatile uint ActiveTargetIndex = 0;
-    public volatile bool Calibrate = false;
+    public volatile int CalibrateUpTo = 0;
 
     public bool MinimizeOnStartup = false;
 
@@ -18,15 +18,19 @@ public class State
 
     public void BeginCalibration()
     {
-        if (Calibrate) return;
-        Calibrate = true;
+        if (Interlocked.CompareExchange(ref CalibrateUpTo, 1, 0) != 0) return;
         ActiveOffset.Set(Matrix4x4.Identity);
         ActiveCorrection.Set(Matrix4x4.Identity);
     }
 
+    public void StepUpCalibration()
+    {
+        Interlocked.Increment(ref CalibrateUpTo);
+    }
+
     public void FinishCalibration()
     {
-        Calibrate = false;
+        Interlocked.Exchange(ref CalibrateUpTo, 0);
     }
 
     public void WriteToDisk()

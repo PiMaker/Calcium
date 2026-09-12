@@ -2,13 +2,6 @@ using System.Numerics;
 
 public static class PoseHook
 {
-    const float MaxMotionEstimate = 0.666f;
-    const float MotionDecay = 0.993f;
-
-    const float MinBlendFactor = 0.0008f;
-    const float BlendDecay = 0.985f;
-    static volatile float BlendFactor = 1f;
-
     static readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it
 
     public static unsafe void PoseDetour(IntPtr self, uint deviceIndex, IntPtr posePtr, uint structSize)
@@ -99,14 +92,13 @@ public static class PoseHook
                     }
                 }
 
-                if (!state.Calibrate && Calibration.Active)
+                if (state.CalibrateUpTo == 0 && Calibration.Active)
                 {
                     lock (Calibration.CalibrationLock)
                     {
                         Utilities.Log("Stopping calibration collector.");
                         Calibration.Stop();
                         state.WriteToDisk();
-                        BlendFactor = 1f;
                     }
                 }
             }
@@ -148,42 +140,36 @@ public static class PoseHook
         if (hmdPose.IsIdentity) return;
 
         // calibration logic, if requested
-        var blendReset = false;
-        if (state.Calibrate)
+        var calibrate = state.CalibrateUpTo;
+        if (calibrate > 0)
         {
             lock (Calibration.CalibrationLock)
             {
-                if (Calibration.Update(activeInverse, hmdPose, out var result))
+                if (Calibration.Update(activeInverse, hmdPose, out var result, calibrate))
                 {
                     Utilities.Log("Calibration result: " + Utilities.SerializeMatrix(result));
                     state.ActiveOffset.Set(result);
-                    blendReset = true;
                 }
             }
         }
-
-        // offset logic, based on calibrated offset
-        var offset = state.ActiveOffset.Value;
 
         // Matrix chain:
         // - pose: from 0,0,0 to current device's position/rotation
         // - activeInverse: from target device's space to world space
         //   -> both the target device and the current device move as if the target device is now at 0,0,0
-        // - offset: calibrated offset matrix, rigid in physical space
+        // - ActiveOffset: calibrated offset matrix, rigid in physical space
         //   -> we move our combined device thingy to it's offset, as if the hmd was at the origin
         // - hmdPose: from 0,0,0 to HMD's position/rotation
         //   -> we finally move it all into HMD's space
-        var correction = activeInverse * offset * hmdPose;
-        BlendIntoCorrection(state, correction, blendReset);
+        var correction = activeInverse * state.ActiveOffset.Value * hmdPose;
+        BlendIntoCorrection(state, correction);
     }
 
-    static void BlendIntoCorrection(State state, Matrix4x4 newCorrection, bool blendReset) // -> into state.ActiveCorrection
+    static void BlendIntoCorrection(State state, Matrix4x4 newCorrection) // -> into state.ActiveCorrection
     {
+        // TODO: Speed-based blending
         var prevCorrection = state.ActiveCorrection.Value;
-        var blend = blendReset ? 1f : BlendFactor;
-        var correction = Utilities.Blend(prevCorrection, newCorrection, blend);
-        blend = Math.Max(blend * BlendDecay, MinBlendFactor);
-        BlendFactor = blend;
+        var correction = newCorrection;
         state.ActiveCorrection.Set(correction);
     }
 

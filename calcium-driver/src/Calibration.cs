@@ -3,13 +3,13 @@ using System.Collections.Concurrent;
 
 public static class Calibration
 {
-    const float MinimumRotation = 0.015f; // Ignore pairs with very small motion
+    const float MinimumRotation = 0.025f; // Ignore pairs with very small motion
     static readonly double[,] RotationNormal = new double[4, 4];
     static readonly ConcurrentQueue<(Matrix4x4 A, Matrix4x4 B)> Pairs = new();
 
     static bool _active;
     static Matrix4x4 _targetInverse;
-    static Matrix4x4 _hmd;
+    static Matrix4x4 _prevHmdInverse;
 
     internal static Lock CalibrationLock = new();
     internal static bool Active => _active;
@@ -17,57 +17,81 @@ public static class Calibration
     public const int MaxSamples = 512;
     public static int CollectedSampleCount => Pairs.Count;
 
+    static readonly double[,] _rotationScratch4x4 = new double[4, 4];
+    static readonly double[,] _rotationScratch3x3 = new double[3, 3];
+
     internal static void Stop()
     {
         if (_active)
         {
             _active = false;
             _targetInverse = Matrix4x4.Identity;
-            _hmd = Matrix4x4.Identity;
+            _prevHmdInverse = Matrix4x4.Identity;
             Array.Clear(RotationNormal);
             Pairs.Clear();
         }
     }
 
-    // Algorithm based on Hand-Eye calibration.
+    // Algorithm based on Hand-Eye calibration with fixed AX = XB.
+    // We don't calculate a translation between tracking spaces here, instead
+    // we focus on recovering only the fixed offset of the mount.
     //
     // Matrix chain:
-    // - targetInverse: target tracking space -> target-local
+    // - targetInverse (A^-1): target tracking space -> target-local
     // - M: target-local -> HMD-local (the fixed mount offset we solve)
-    // - hmd: HMD-local -> HMD tracking space
-    // Since the target is rigidly mounted to the HMD, `targetInverse * M * hmd` is constant.
+    // - hmd (B): HMD-local -> HMD tracking space
     //
-    // For two samples this becomes A * M = M * B. A pair alone has many valid
-    // answers, so replacing M with A * M * inverse(B) only rotates its error.
-    // We instead accumulate pairs, solve M's rotation from all orientation
-    // constraints, then solve translation and uniform scale with rotation fixed.
-    // Write A as (Ra, a), B as (Rb, b), and M as (scale * Rm, t):
-    // - a and b are the same head motion as seen by the target and HMD systems.
-    // - Rm turns target axes into HMD axes; scale changes target-space distances.
-    // - t is the offset from the target tracker origin to the HMD origin.
-    // Id is the 3x3 identity rotation. First we turn target-space translation
-    // a into HMD axes and units: scale * (a * Rm). The remaining difference to
-    // HMD translation b must be the arc traced because the target and HMD have
-    // different rotation origins: t * (Id - Rb). It is zero with no HMD
-    // rotation. Rotation is solved above from orientations; this solve then
-    // finds the translation and scale that make both spaces' motion agree.
-    // t * (Id - Rb) + scale * (a * Rm) = b.
+    // The mount is rigid, so the whole chain targetInverse * M * hmd has to
+    // be a physical constant: Deltas in targetInverse and hmd cancel out.
+    // Comparing each pair of samples gives A * M = M * B, where A
+    // is the relative motion the target measured and B the same motion
+    // measured by the HMD. Or conjugated: A = M * B * M^-1.
+    //
+    // One pair leaves M undetermined (many transforms conjugate B into A),
+    // so pairs accumulate and M is solved in two stages over all of them:
+    //
+    // 1. Rotation, from orientations only (SolveRotation). Each pair
+    //    linearly constrains the 4 components of M's quaternion; the
+    //    least-squares fit over all pairs is the eigenvector of a symmetric
+    //    4x4 matrix with the smallest eigenvalue.
+    //
+    // 2. Translation and uniform scale, rotation fixed (SolveSimilarity).
+    //    Write A = (Ra, a), B = (Rb, b), M = (scale * Rm, t): Rm turns
+    //    target axes into HMD axes, scale converts target-space distances,
+    //    t is the offset from the target tracker origin to the HMD origin.
+    //    If both origins coincided, the measured translations would agree
+    //    up to scale once Rm is applied. But if they pivot about different
+    //    points, a rotation sweeps the offset point along an arc. That arc term
+    //    is t * (Id - Rb): zero without rotation, growing with the offset's
+    //    distance from the rotation axis.
+    //        t * (Id - Rb) + scale * (a * Rm) = b
+    //    Why: a is the target's own displacement - but the target origin is
+    //    a body point held at offset t from the HMD's pivot. The body motion
+    //    (rotation Rb about the HMD origin, translation b) carries that
+    //    point to t * Rb + b. Subtracting the start point t gives its
+    //    displacement in HMD axes: b - t * (Id - Rb). That must equal the
+    //    same displacement measured by the target, turned into HMD axes and
+    //    units: scale * (a * Rm).
+    //    Each pair gives 3 equations in the 4 unknowns (t, scale), stacked
+    //    into normal equations and solved as a linear system.
     internal static bool Update(Matrix4x4 targetInverse, Matrix4x4 hmd, out Matrix4x4 result)
     {
         result = Matrix4x4.Identity;
+
+        if (!Matrix4x4.Invert(hmd, out var currentHmdInverse)) return false;
 
         if (!_active)
         {
             // first input is set up as the anchor, don't calibrate on invalid prev values
             _active = true;
             _targetInverse = targetInverse;
-            _hmd = hmd;
+            _prevHmdInverse = currentHmdInverse;
             return false;
         }
 
         var current = targetInverse;
         var previous = _targetInverse;
-        if (!Matrix4x4.Invert(current, out var currentInverse) || !Matrix4x4.Invert(_hmd, out var previousHmdInverse))
+        if (!Matrix4x4.Invert(current, out var currentInverse))
             return false;
 
         // A * M = M * B
@@ -77,14 +101,19 @@ public static class Calibration
         // Thus: current^-1 * previous * M = M * (currentHmd * previousHmd^-1)
         // This is true iff M is correct and represents a constant in physical space - minimizing the error means finding M
         var a = currentInverse * previous;
-        var b = hmd * previousHmdInverse;
-        if (RotationAngle(b) < MinimumRotation) return false;
-        if (Pairs.Count >= MaxSamples) return false;
+        var b = hmd * _prevHmdInverse;
 
-        AddRotationConstraint(a, b);
-        Pairs.Enqueue((a, b));
-        _targetInverse = targetInverse;
-        _hmd = hmd;
+        // Nearly motionless pairs carry almost no orientation or arc
+        // information; they only dilute the solve with noise.
+        if (RotationAngle(b) < MinimumRotation) return false;
+
+        if (Pairs.Count < MaxSamples)
+        {
+            AddRotationConstraint(a, b);
+            Pairs.Enqueue((a, b));
+            _targetInverse = targetInverse;
+            _prevHmdInverse = currentHmdInverse;
+        }
 
         if (!SolveRotation(out var rotation) || !SolveSimilarity(rotation, out var translation, out var scale)) return false;
 
@@ -93,44 +122,69 @@ public static class Calibration
         return true;
     }
 
+    // Rotation angle of m in radians, independent of sign
     static float RotationAngle(Matrix4x4 m)
     {
         var q = Quaternion.CreateFromRotationMatrix(m);
         return 2f * MathF.Acos(Math.Clamp(MathF.Abs(q.W), 0f, 1f));
     }
 
-    // Matrix4x4 uses row vectors: Matrix(a) * Matrix(x) is Concatenate(a, x),
-    // which is x * a in conventional quaternion multiplication.
+    // Quaternion form of the rotation constraint. Matrix4x4 uses row vectors:
+    // Matrix(a) * Matrix(x) is Concatenate(a, x), which is x * a in
+    // conventional quaternion multiplication. So A * M = M * B reads
+    // qM * qA = qB * qM, or qM * qA - qB * qM = 0: a homogeneous linear
+    // equation C * qM = 0 in the 4 components of qM.
     static void AddRotationConstraint(Matrix4x4 a, Matrix4x4 b)
     {
         var qa = Quaternion.CreateFromRotationMatrix(a);
         var qb = Quaternion.CreateFromRotationMatrix(b);
+
+        // Linear constraining requires consistent signs, always pick short-arc
         if (qa.W < 0f) qa = Quaternion.Negate(qa);
         if (qb.W < 0f) qb = Quaternion.Negate(qb);
 
-        // A * M = M * B becomes qM * qA = qB * qM.
-        var c = new double[4, 4];
-        Right(qa, c);
-        SubtractLeft(qb, c);
+        // If R(q) is a rotation matrix such that R(q) * point = point * q,
+        // and L(q) is correspondingly L(q) * point = q * point, then for
+        // qM * qA - qB * qM = 0 as C * qM = 0, we get C = R(qA) - L(qB).
+        // Accumulating C^T * C into RotationNormal sums the squared residuals
+        // of all pairs into one quadratic form in qM.
+        var c = _rotationScratch4x4; // new double[4, 4]
+        Right(qa, c); // c = R(qa)
+        SubtractLeft(qb, c); // c = R(qa) - L(qb)
         for (var row = 0; row < 4; row++)
             for (var col = 0; col < 4; col++)
                 for (var k = 0; k < 4; k++)
-                    RotationNormal[row, col] += c[k, row] * c[k, col];
+                    RotationNormal[row, col] += c[k, row] * c[k, col]; // Accumulate C^T * C into RotationNormal
     }
 
-    // Each pair says that turning in target axes by Ra must equal turning in
-    // HMD axes by Rb after applying the fixed mount rotation. In quaternion
-    // form that is a four-number residual C * qM. RotationNormal is the sum
-    // of C-transpose * C for every motion pair: it measures total squared
-    // mismatch for each possible mount quaternion. The unit quaternion in its
-    // smallest-eigenvalue direction has the least mismatch across all pairs.
+    // Least-squares fit of the mount quaternion. RotationNormal's quadratic
+    // form is the total squared mismatch ||C * qM||^2 summed over all pairs;
+    // as a sum of squares it is a bowl-shaped error surface over the unit
+    // sphere of quaternions. The best-fit unit quaternion is its eigenvector
+    // with the smallest eigenvalue - the flattest direction of the bowl
+    // (the same eigenvector trick as Horn's quaternion absolute-orientation
+    // method).
+    //
+    // The eigendecomposition is the classical Jacobi method: a symmetric
+    // matrix is diagonalized by a sequence of 2D plane rotations, each
+    // chosen to zero the largest remaining off-diagonal entry. Off-diagonal
+    // entries measure how much the current axes mix pairs of eigenvectors;
+    // once they are gone, the diagonal holds the eigenvalues and the product
+    // of rotations (vectors) holds the eigenvectors.
+    //
+    // Degeneracy: the fit is unique (up to the q / -q sign symmetry) only
+    // if exactly one eigenvalue is approx. 0. If the second-smallest collapses
+    // too, the data admits a whole family of equally good solutions -
+    // typically because every sample rotated about essentially one axis,
+    // leaving the mount's twist around that axis unconstrained. Motions
+    // around at least two independent axes are needed.
     static bool SolveRotation(out Quaternion rotation)
     {
         var a = (double[,])RotationNormal.Clone();
-        var vectors = new double[4, 4];
+        var vectors = _rotationScratch4x4; Array.Clear(vectors); // new double[4, 4]
         for (var i = 0; i < 4; i++) vectors[i, i] = 1;
 
-        for (var iteration = 0; iteration < 32; iteration++)
+        for (var iteration = 0; iteration < 42; iteration++)
         {
             var p = 0;
             var q = 1;
@@ -148,6 +202,8 @@ public static class Calibration
                     }
                 }
             }
+            // No significant off-diagonal left: matrix is diagonal to
+            // working precision.
             if (largest < 1e-12) break;
 
             var angle = 0.5 * Math.Atan2(2d * a[p, q], a[q, q] - a[p, p]);
@@ -170,6 +226,8 @@ public static class Calibration
             }
         }
 
+        // The diagonal now holds the eigenvalues, in no particular order.
+        // Find smallest, second-smallest and largest with a linear scan.
         var min = 0;
         var second = 1;
         var max = 0;
@@ -183,6 +241,10 @@ public static class Calibration
             if (i != min && (second == min || a[i, i] < a[second, second]))
                 second = i;
         }
+
+        // Reject if there is no signal at all, or if the second-smallest
+        // eigenvalue collapsed: a second near-zero eigenvalue means a family
+        // of equally good solutions, not one best fit (see header).
         if (a[max, max] < 1e-9 || a[second, second] < a[max, max] * 1e-4)
         {
             rotation = default;
@@ -193,25 +255,45 @@ public static class Calibration
         return true;
     }
 
+    // Stage 2: least squares for translation t and uniform scale with the
+    // rotation fixed. Each pair contributes the 3 scalar equations of
+    //     t * (Id - Rb) + scale * (a * Rm) = b
+    // (see Update). With unknown vector x = (t, scale), accumulating the
+    // equation rows' outer products and right-hand sides over all pairs
+    // builds the normal equations of a plain linear least-squares problem.
+    // x[0..2] is t, x[3] is scale; a non-positive scale would mirror or
+    // collapse target space, which is nonsense, so reject it.
     static bool SolveSimilarity(Quaternion rotation, out Vector3 translation, out float scale)
     {
-        var normal = new double[4, 4];
-        var rhs = new double[4];
         var rm = Matrix4x4.CreateFromQuaternion(rotation);
+        var c = _rotationScratch3x3; // new double[3, 3]
+        var normal = _rotationScratch4x4; Array.Clear(normal); // new double[4, 4]
+        Span<double> rhs = stackalloc double[4]; rhs.Clear();
+        Span<double> u = stackalloc double[3];
+        Span<double> bv = stackalloc double[3];
+        Span<double> row = stackalloc double[4];
         foreach (var (a, b) in Pairs)
         {
-            var scaledA = Vector3.TransformNormal(a.Translation, rm);
-            var c = new double[3, 3]
-            {
-                { 1d - b.M11, -b.M12, -b.M13 },
-                { -b.M21, 1d - b.M22, -b.M23 },
-                { -b.M31, -b.M32, 1d - b.M33 },
-            };
-            var u = new[] { (double)scaledA.X, scaledA.Y, scaledA.Z };
-            var bv = new[] { (double)b.M41, b.M42, b.M43 };
+            // Per pair, one scalar equation per output component of
+            //     t * (Id - Rb) + scale * (a * Rm) = b
+            // with unknown vector x = (tx, ty, tz, scale):
+            // - rotatedA: a turned into HMD axes (a * Rm)
+            // - c: Id - Rb, the arc-term coefficient of t
+            // - bv: b, the HMD-side translation (equation right-hand side)
+            // - row: the output equation's coefficients - column `output` of
+            //   (Id - Rb) for t, component `output` of a * Rm for scale
+            // Each row contributes row * row^T to the normal matrix and
+            // row * b to the right-hand side; Solve() then solves the system.
+            var rotatedA = Vector3.TransformNormal(a.Translation, rm);
+            c[0, 0] = 1d - b.M11; c[0, 1] = -b.M12; c[0, 2] = -b.M13;
+            c[1, 0] = -b.M21; c[1, 1] = 1d - b.M22; c[1, 2] = -b.M23;
+            c[2, 0] = -b.M31; c[2, 1] = -b.M32; c[2, 2] = 1d - b.M33;
+            u[0] = rotatedA.X; u[1] = rotatedA.Y; u[2] = rotatedA.Z;
+            bv[0] = b.M41; bv[1] = b.M42; bv[2] = b.M43;
             for (var output = 0; output < 3; output++)
             {
-                var row = new[] { c[0, output], c[1, output], c[2, output], u[output] };
+                row[0] = c[0, output]; row[1] = c[1, output];
+                row[2] = c[2, output]; row[3] = u[output];
                 for (var i = 0; i < 4; i++)
                 {
                     rhs[i] += bv[output] * row[i];
@@ -221,7 +303,8 @@ public static class Calibration
             }
         }
 
-        if (!Solve(normal, rhs, out var x) || x[3] <= 0d)
+        Span<double> x = stackalloc double[4];
+        if (!Solve(normal, rhs, ref x) || x[3] <= 0d)
         {
             translation = default;
             scale = 1f;
@@ -232,7 +315,12 @@ public static class Calibration
         return true;
     }
 
-    static bool Solve(double[,] normal, double[] rhs, out double[] x)
+    // Gauss-Jordan elimination with partial pivoting on the augmented
+    // matrix. Pivoting (swap in the largest-magnitude coefficient) avoids
+    // dividing by tiny numbers, which would amplify rounding error. A
+    // negligible pivot means the accumulated equations do not determine the
+    // unknowns (too few or too similar samples); reject.
+    static bool Solve(double[,] normal, Span<double> rhs, ref Span<double> x)
     {
         var n = rhs.Length;
         var a = new double[n, n + 1];
@@ -252,7 +340,7 @@ public static class Calibration
                 if (Math.Abs(a[row, col]) > Math.Abs(a[pivot, col])) pivot = row;
             if (scale == 0d || Math.Abs(a[pivot, col]) < scale * 1e-5)
             {
-                x = [];
+                x.Clear();
                 return false;
             }
             for (var k = col; k <= n; k++) (a[col, k], a[pivot, k]) = (a[pivot, k], a[col, k]);
@@ -266,12 +354,14 @@ public static class Calibration
             }
         }
 
-        x = new double[n];
         for (var i = 0; i < n; i++) x[i] = a[i, n];
         return true;
     }
 
-    // Conventional quaternion multiplication matrices, with component order w, x, y, z.
+    // Conventional quaternion multiplication as 4x4 matrices, component
+    // order (w, x, y, z). Right(q, m) fills m so that m * p = p * q
+    // (q multiplied on the right); SubtractLeft subtracts the matrix with
+    // m * p = q * p (q multiplied on the left).
     static void Right(Quaternion q, double[,] m)
     {
         var w = q.W; var x = q.X; var y = q.Y; var z = q.Z;

@@ -215,6 +215,7 @@ public class Frontend : IDisposable
                 var collected = Calibration.CollectedSampleCount;
                 if (collected >= Calibration.MaxSamples * calibrationState)
                 {
+                    Application.PlaySound(MessageBoxIcon.Information);
                     if (calibrationState < Calibration.CalibrationSteps)
                         waitingOnStepUp = true;
                     else

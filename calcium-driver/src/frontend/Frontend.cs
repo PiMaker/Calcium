@@ -25,6 +25,7 @@ public class Frontend : IDisposable
     readonly List<string> _rows = new();
     readonly StringBuilder _row = new();
     readonly Dictionary<uint, Vector3> _lastDevicePositions = new();
+    int playedSoundForStage = -1;
 
     public Frontend()
     {
@@ -46,7 +47,7 @@ public class Frontend : IDisposable
             using var fontSmall = new Font("Segoe UI", 9f);
             using var fontMono = new Font("Consolas", 15f);
 
-            var window = new Window("Calcium", 640, 410, fontUI, icon)
+            var window = new Window("Calcium", 680, 410, fontUI, icon)
             {
                 CanMaximize = false,
                 CanResize = false,
@@ -215,7 +216,12 @@ public class Frontend : IDisposable
                 var collected = Calibration.CollectedSampleCount;
                 if (collected >= Calibration.MaxSamples * calibrationState)
                 {
-                    Application.PlaySound(MessageBoxIcon.Information);
+                    if (playedSoundForStage != calibrationState)
+                    {
+                        Application.PlaySound(MessageBoxIcon.Information);
+                        playedSoundForStage = calibrationState;
+                    }
+
                     if (calibrationState < Calibration.CalibrationSteps)
                         waitingOnStepUp = true;
                     else
@@ -247,7 +253,8 @@ public class Frontend : IDisposable
                 else
                 {
                     var samples = Calibration.CollectedSampleCount;
-                    _helpText.Text = $"Calibration step {calibrationState} of {Calibration.CalibrationSteps}: {samples/(float)(Calibration.MaxSamples * calibrationState):P2}\nGently move and rotate your head! 🔃";
+                    var progress = (samples - (Calibration.MaxSamples * (calibrationState - 1)))/(float)(Calibration.MaxSamples * calibrationState);
+                    _helpText.Text = $"Calibration step {calibrationState} of {Calibration.CalibrationSteps}: {progress:P2}\nGently move and rotate your head! 🔃";
                 }
             }
             else if (State.Current.ActiveTargetIndex != 0)
@@ -280,9 +287,10 @@ public class Frontend : IDisposable
         _row.Append(' ');
         AppendField(d.TrackingSpace, 11);
         _row.Append(' ');
-        AppendField(d.SerialNumber, 20);
+        AppendField(d.SerialNumber, 19);
         _row.Append(' ');
         AppendField(ClassToString(d.DeviceClass), 7);
+        _row.Append(' ');
         AppendLastPosition(d);
         _rows.Add(_row.ToString());
 
@@ -297,9 +305,9 @@ public class Frontend : IDisposable
         {
             if (_lastDevicePositions.TryGetValue(d.ID, out var pos))
             {
-                _row.Append(pos.X.ToString("F2")).Append(',');
-                _row.Append(pos.Y.ToString("F2")).Append(',');
-                _row.Append(pos.Z.ToString("F2"));
+                _row.Append(pos.X.ToString("F1")).Append(',');
+                _row.Append(pos.Y.ToString("F1")).Append(',');
+                _row.Append(pos.Z.ToString("F1"));
             }
             else
             {

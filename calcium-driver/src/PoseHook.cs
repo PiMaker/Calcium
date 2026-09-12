@@ -2,17 +2,17 @@ using System.Numerics;
 
 public static class PoseHook
 {
-    const float MaxRotationSpeedCorrecting = 0.5f; // radians per second
-    const float MaxRotationSpeedCalibrating = 4f; // radians per second
+    const float MaxRotationSpeedCorrecting = 2f; // radians per second
+    const float MaxRotationSpeedCalibrating = 8f; // radians per second
 
-    const float MaxAngularVelocity = 0.1f; // radians per second
-    const float MaxAngularAcceleration = 0.2f; // radians per second squared
+    const float MaxAngularVelocity = 2f;
+    const float MaxAngularAcceleration = 0.4f;
 
-    const float BlendRotationFactor = 0.004f;
-    const float BlendTranslationFactor = 0.025f;
-    const float BlendScaleFactor = 0.001f;
+    const float BlendRotationFactor = 0.01f;
+    const float BlendTranslationFactor = 0.1f;
+    const float BlendScaleFactor = 0.002f;
 
-    const float TrackingJumpThreshold = 0.3f; // off by more than 30cm - consider tracking jump and correct immediately
+    const float TrackingJumpThreshold = 0.2f; // off by more than 20cm - consider tracking jump and correct immediately
     const float TrackingJumpRotThreshold = (float)Math.PI / 2f;
 
     static readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it

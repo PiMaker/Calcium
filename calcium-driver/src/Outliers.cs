@@ -5,7 +5,7 @@ public class Outliers
 {
     const int HistoryLength = 16;
     const int RecoverySamples = 3;
-    const float MaxTranslationSpeed = 4f; // metres per second
+    const float MaxTranslationSpeed = 5f; // metres per second
     const float MinTranslation = 0.00001f; // perfectly still devices are probably not tracking
     const float SustainedTranslationSpeed = 1f;
     const float MinimumStraightness = 0.97f;

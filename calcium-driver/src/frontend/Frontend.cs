@@ -24,6 +24,7 @@ public class Frontend : IDisposable
     readonly List<Device> _deviceCache = new();
     readonly List<string> _rows = new();
     readonly StringBuilder _row = new();
+    readonly Dictionary<uint, Vector3> _lastDevicePositions = new();
 
     public Frontend()
     {
@@ -165,7 +166,13 @@ public class Frontend : IDisposable
             foreach (var dev in State.Current.Devices.Values)
             {
                 if (dev.DeviceClass is OpenVr.DeviceClassController or OpenVr.DeviceClassGenericTracker)
+                {
                     _deviceCache.Add(dev);
+
+                    var lp = dev.LastPose.Value;
+                    if (!lp.IsIdentity)
+                        _lastDevicePositions[dev.ID] = lp.Translation;
+                }
 
                 CheckDeviceChanged(dev);
             }
@@ -222,7 +229,7 @@ public class Frontend : IDisposable
             }
             else if (State.Current.ActiveTargetIndex == 0)
             {
-                _helpText.Text = "Select the device that you have attached to your headset in the list above. To identify it, try shaking your head and watching the last column. 🔍";
+                _helpText.Text = "Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍";
             }
             else if (State.Current.Calibrate)
             {
@@ -251,8 +258,6 @@ public class Frontend : IDisposable
         }
     }
 
-    // builds one ListBox row: id right-3, two spaces, tracking space left-20, serial left-32,
-    // class left-10, motion "F2" right-6; no intermediate strings beyond the row itself
     void AppendDeviceRow(Device d)
     {
         _row.Clear();
@@ -264,7 +269,7 @@ public class Frontend : IDisposable
         AppendField(d.SerialNumber, 20);
         _row.Append(' ');
         AppendField(ClassToString(d.DeviceClass), 7);
-        _row.Append(d.MotionEstimate.ToString("F3"));
+        AppendLastPosition(d);
         _rows.Add(_row.ToString());
 
         void AppendField(string text, int width)
@@ -272,6 +277,20 @@ public class Frontend : IDisposable
             _row.Append(text);
             for (var pad = width - text.Length; pad > 0; pad--)
                 _row.Append(' ');
+        }
+
+        void AppendLastPosition(Device d)
+        {
+            if (_lastDevicePositions.TryGetValue(d.ID, out var pos))
+            {
+                _row.Append(pos.X.ToString("F2")).Append(',');
+                _row.Append(pos.Y.ToString("F2")).Append(',');
+                _row.Append(pos.Z.ToString("F2"));
+            }
+            else
+            {
+                _row.Append("N/A     ");
+            }
         }
     }
 

@@ -58,7 +58,7 @@ public static class PoseHook
                 if (selfDevice.DeviceClass == OpenVr.DeviceClassTrackingReference)
                 {
                     // basestations should still be shifted, but aren't needed for calibration
-                    selfDevice.LastPose = poseMatrix;
+                    selfDevice.LastPose.Set(poseMatrix);
                     if (activeTargetIndex != 0 && selfDevice.TrackingSpace == correctedTrackingSpace)
                         Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
                     return;
@@ -73,14 +73,8 @@ public static class PoseHook
 
                     if (isValid)
                     {
-                        // motion estimation and LastPose tracking
-                        if (selfDevice.LastPose is Matrix4x4 lastPose)
-                        {
-                            var delta = GetDelta(poseMatrix, lastPose);
-                            selfDevice.MotionEstimate = Math.Clamp(delta + selfDevice.MotionEstimate, 0f, 4f);
-                        }
-                        selfDevice.MotionEstimate *= MotionDecay;
-                        selfDevice.LastPose = poseMatrix;
+                        // LastPose tracking
+                        selfDevice.LastPose.Set(poseMatrix);
 
                         // handle running correction and calibration
                         if (isActiveTracker)
@@ -90,7 +84,7 @@ public static class PoseHook
                     {
                         // ignore outlier/error pose, reset LastPose to indicate for calibration to skip a step
                         // still apply offset below though
-                        selfDevice.LastPose = null;
+                        selfDevice.LastPose.Set(Matrix4x4.Identity);
                     }
 
                     if (deviceIndex != 0 /* HMD */ && activeTargetIndex != 0 &&
@@ -150,8 +144,8 @@ public static class PoseHook
             return;
         }
 
-        var hmdPoseRaw = hmdDevice.LastPose;
-        if (hmdPoseRaw is not Matrix4x4 hmdPose) return;
+        var hmdPose = hmdDevice.LastPose.Value;
+        if (hmdPose.IsIdentity) return;
 
         // calibration logic, if requested
         var blendReset = false;
@@ -166,13 +160,6 @@ public static class PoseHook
                     blendReset = true;
                 }
             }
-        }
-
-        // only compute offset correction when not moving to avoid head jiggle moving trackers
-        if (!blendReset && BlendFactor < 0.1f)
-        {
-            if (targetDevice.MotionEstimate > MaxMotionEstimate) return;
-            if (hmdDevice.MotionEstimate > MaxMotionEstimate) return;
         }
 
         // offset logic, based on calibrated offset

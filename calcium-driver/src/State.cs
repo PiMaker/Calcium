@@ -73,13 +73,7 @@ public class Device(uint id, string trackingSpace, string serialNumber, int devi
     private readonly Lock _gate = new(); // Used internally for thread-safe access to properties
 
     public readonly Outliers Outliers = new();
-    public float MotionEstimate = 0f;
-
-    public Matrix4x4? LastPose
-    {
-        get { lock (_gate) { return field; } }
-        set { lock (_gate) { field = value; } }
-    } = null;
+    public PooledAtomicStrongBox<Matrix4x4> LastPose { get; } = new(16, Matrix4x4.Identity);
 
     public string TrackingSpace
     {

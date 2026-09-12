@@ -5,8 +5,8 @@ public class Outliers
 {
     const int HistoryLength = 16;
     const int RecoverySamples = 3;
-    const float MaxTranslationSpeed = 5.0f; // metres per second
-    const float MaxRotationSpeed = 10f; // radians per second
+    const float MaxTranslationSpeed = 4.0f; // metres per second
+    const float MaxRotationSpeed = 8f; // radians per second
     const float MinTranslation = 0.00001f; // perfectly still devices are probably not tracking
     const float SustainedTranslationSpeed = 1.0f;
     const float MinimumStraightness = 0.97f;

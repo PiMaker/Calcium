@@ -1,6 +1,11 @@
 using System.Numerics;
 using System.Collections.Concurrent;
 
+// AI Disclaimer: This file in particular was created with the help of GLM 5.3-Flash
+// and GPT 5.6. I made sure to collaboratively document the math so the end result is
+// somewhat traceable and understandable. None of this is particularly new math, just
+// applying existing techniques to our specific issue and writing it out in C#.
+
 public static class Calibration
 {
     const float MinimumRotation = 0.025f; // Ignore pairs with very small motion

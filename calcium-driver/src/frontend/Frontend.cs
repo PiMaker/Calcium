@@ -215,24 +215,25 @@ public class Frontend : IDisposable
             _resetCalibrationButton.Disabled = !hasCalibration;
 
             // set help text based on current app status
-            if (!foundActive && !string.IsNullOrEmpty(Volatile.Read(ref State.Current.ActiveSerialNumber)))
+            var activeSerial = Volatile.Read(ref State.Current.ActiveSerialNumber);
+            if (!foundActive && !string.IsNullOrEmpty(activeSerial))
             {
-                _helpText.Text = "A mounted tracker was saved by serial number, but isn't available yet. Make sure it's turned on and tracking! ⌛";
+                _helpText.Text = $"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛";
             }
             else if (State.Current.ActiveTargetIndex == 0)
             {
-                _helpText.Text = "Select the device that you have attached to your headset in the list above. To identify it, try shaking your head and watching the 'Motion' column! 🔍";
+                _helpText.Text = "Select the device that you have attached to your headset in the list above. To identify it, try shaking your head and watching the last column. 🔍";
             }
             else if (State.Current.Calibrate)
             {
                 var samples = Calibration.CollectedSampleCount;
-                _helpText.Text = $"Calibration in progress: {samples/(float)Calibration.MaxSamples:P2}\nGently move and rotate your head!";
+                _helpText.Text = $"Calibration in progress: {samples/(float)Calibration.MaxSamples:P2}\nGently move and rotate your head! 🔃";
             }
             else if (State.Current.ActiveTargetIndex != 0)
             {
                 if (!hasCalibration)
                 {
-                    _helpText.Text = "No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup.";
+                    _helpText.Text = "No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️";
                 }
                 else
                 {
@@ -246,7 +247,7 @@ public class Frontend : IDisposable
         }
         catch (Exception ex)
         {
-            Utilities.Log($"An error occurred in frontend loop: {ex.Message}");
+            Utilities.Log($"An error occurred in the frontend loop: {ex.Message}");
         }
     }
 

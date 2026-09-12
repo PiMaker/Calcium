@@ -45,7 +45,7 @@ public class Frontend : IDisposable
             using var fontSmall = new Font("Segoe UI", 9f);
             using var fontMono = new Font("Consolas", 15f);
 
-            var window = new Window("Calcium", 620, 410, fontUI, icon)
+            var window = new Window("Calcium", 640, 410, fontUI, icon)
             {
                 CanMaximize = false,
                 CanResize = false,
@@ -255,15 +255,14 @@ public class Frontend : IDisposable
     void AppendDeviceRow(Device d)
     {
         _row.Clear();
-        if (d.ID >= 100) _row.Append(d.ID);
-        else if (d.ID >= 10) _row.Append("  ").Append(d.ID);
-        else _row.Append("   ").Append(d.ID);
-        _row.Append("  ");
-        AppendField(d.TrackingSpace, 14);
+        if (d.ID >= 10) _row.Append(" ").Append(d.ID);
+        else _row.Append("  ").Append(d.ID);
         _row.Append(' ');
-        AppendField(d.SerialNumber, 28);
+        AppendField(d.TrackingSpace, 11);
         _row.Append(' ');
-        AppendField(ClassToString(d.DeviceClass), 10);
+        AppendField(d.SerialNumber, 20);
+        _row.Append(' ');
+        AppendField(ClassToString(d.DeviceClass), 7);
         _row.Append(d.MotionEstimate.ToString("F3"));
         _rows.Add(_row.ToString());
 
@@ -308,7 +307,7 @@ public class Frontend : IDisposable
 
     static string ClassToString(int deviceClass) => deviceClass switch
     {
-        OpenVr.DeviceClassController => "Controller",
+        OpenVr.DeviceClassController => "Ctrller",
         OpenVr.DeviceClassGenericTracker => "Tracker",
         _ => deviceClass.ToString(),
     };

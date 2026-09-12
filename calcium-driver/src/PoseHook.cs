@@ -30,16 +30,18 @@ public static class PoseHook
                         state.ActiveTargetIndex = deviceIndex;
                 }
 
+                // check for Hand controllers _before_ disconnect handling
+                // we expect these to stay connected forever once they show up, but they report as disconnected when not in view of tracking cams
+                var selfTrackingSpace = selfDevice.TrackingSpace;
+                if (string.IsNullOrEmpty(selfTrackingSpace) || selfDevice.SerialNumber.StartsWith("VRLINKQ_Hand"))
+                    return;
+
                 if (pose.deviceIsConnected == 0)
                 {
                     Utilities.Log("Device disconnected: " + deviceIndex);
                     state.Devices.TryRemove(deviceIndex, out _);
                     return;
                 }
-
-                var selfTrackingSpace = selfDevice.TrackingSpace;
-                if (string.IsNullOrEmpty(selfTrackingSpace) || selfDevice.SerialNumber.StartsWith("VRLINKQ_Hand"))
-                    return;
 
                 var poseMatrix = Utilities.GetPoseMatrix(pose);
                 var activeTargetIndex = state.ActiveTargetIndex;

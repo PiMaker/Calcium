@@ -2,6 +2,19 @@ using System.Numerics;
 
 public static class PoseHook
 {
+    const float MaxRotationSpeedCorrecting = 0.5f; // radians per second
+    const float MaxRotationSpeedCalibrating = 4f; // radians per second
+
+    const float MaxAngularVelocity = 0.1f; // radians per second
+    const float MaxAngularAcceleration = 0.2f; // radians per second squared
+
+    const float BlendRotationFactor = 0.004f;
+    const float BlendTranslationFactor = 0.025f;
+    const float BlendScaleFactor = 0.001f;
+
+    const float TrackingJumpThreshold = 0.3f; // off by more than 30cm - consider tracking jump and correct immediately
+    const float TrackingJumpRotThreshold = (float)Math.PI / 2f;
+
     static readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it
 
     public static unsafe void PoseDetour(IntPtr self, uint deviceIndex, IntPtr posePtr, uint structSize)
@@ -62,7 +75,8 @@ public static class PoseHook
                     var isValid = pose.deviceIsConnected != 0 &&
                                   pose.poseIsValid != 0 &&
                                   pose.result == OpenVr.TrackingResultRunningOk &&
-                                  !selfDevice.Outliers.IsOutlierAndStore(poseMatrix);
+                                  !selfDevice.Outliers.IsOutlierAndStore(poseMatrix,
+                                      state.CalibrateUpTo > 0 ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting);
 
                     if (isValid)
                     {
@@ -71,7 +85,7 @@ public static class PoseHook
 
                         // handle running correction and calibration
                         if (isActiveTracker)
-                            HandleValidActiveTrackerPose(state, selfDevice, poseMatrix);
+                            HandleValidActiveTrackerPose(state, poseMatrix, ref pose);
                     }
                     else
                     {
@@ -127,7 +141,7 @@ public static class PoseHook
     }
 
     // must hold activeDevice.PoseLock, updates correction matrix
-    static void HandleValidActiveTrackerPose(State state, Device targetDevice, Matrix4x4 poseMatrix)
+    static void HandleValidActiveTrackerPose(State state, Matrix4x4 poseMatrix, ref DriverPose_t pose)
     {
         // check if we and the HMD have a valid, recent pose
         if (!Matrix4x4.Invert(poseMatrix, out var activeInverse) ||
@@ -153,7 +167,7 @@ public static class PoseHook
             }
         }
 
-        // Matrix chain:
+        // Matrix chain to arrive at the actual playspace correction from the calibrated tracker offset:
         // - pose: from 0,0,0 to current device's position/rotation
         // - activeInverse: from target device's space to world space
         //   -> both the target device and the current device move as if the target device is now at 0,0,0
@@ -162,14 +176,42 @@ public static class PoseHook
         // - hmdPose: from 0,0,0 to HMD's position/rotation
         //   -> we finally move it all into HMD's space
         var correction = activeInverse * state.ActiveOffset.Value * hmdPose;
-        BlendIntoCorrection(state, correction);
+        BlendIntoCorrection(state, correction, ref pose);
     }
 
-    static void BlendIntoCorrection(State state, Matrix4x4 newCorrection) // -> into state.ActiveCorrection
+    static void BlendIntoCorrection(State state, Matrix4x4 newCorrection, ref DriverPose_t pose) // -> into state.ActiveCorrection
     {
-        // TODO: Speed-based blending
         var prevCorrection = state.ActiveCorrection.Value;
-        var correction = newCorrection;
+
+        var translationDelta = Vector3.Distance(prevCorrection.Translation, newCorrection.Translation);
+        var angularDelta = Matrix4x4.Invert(newCorrection, out var inverted) ? Utilities.RotationAngle(prevCorrection * inverted) : 0f;
+        if (translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold)
+        {
+            Utilities.Log($"Tracking jump detected: {translationDelta}m, {angularDelta:F4}rad");
+            state.ActiveCorrection.Set(newCorrection);
+            return;
+        }
+
+        // Blend into the active pose correction based on rotation velocity and acceleration.
+        // Translation is not accounted for, perfectly linear motion without rotation is unlikely.
+        // The goal is to avoid considering interpolated or intertially extrapolated poses from the
+        // device that may overshoot or have greater deltas due to time-misalignment.
+        var angularVelocity = pose.vecAngularVelocity;
+        var angularAcceleration = pose.vecAngularAcceleration;
+        var maxVelocity = Math.Max(Math.Abs(angularVelocity.x), Math.Max(Math.Abs(angularVelocity.y), Math.Abs(angularVelocity.z)));
+        var maxAcceleration = Math.Max(Math.Abs(angularAcceleration.x), Math.Max(Math.Abs(angularAcceleration.y), Math.Abs(angularAcceleration.z)));
+
+        var blendVelocity = 1f - Math.Min(maxVelocity / MaxAngularVelocity, 1f);
+        var blendAcceleration = 1f - Math.Min(maxAcceleration / MaxAngularAcceleration, 1f);
+
+        var blend = (float)Math.Min(blendVelocity, blendAcceleration);
+        state.LastCorrectionBlend = blend;
+
+        var correction = Utilities.Blend(prevCorrection, newCorrection,
+            tRot: blend * BlendRotationFactor,
+            tScale: blend * BlendScaleFactor,
+            tTranslate: blend * BlendTranslationFactor + translationDelta * BlendTranslationFactor /* linearize somewhat */);
+
         state.ActiveCorrection.Set(correction);
     }
 

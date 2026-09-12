@@ -6,7 +6,6 @@ public class Outliers
     const int HistoryLength = 16;
     const int RecoverySamples = 3;
     const float MaxTranslationSpeed = 4f; // metres per second
-    const float MaxRotationSpeed = 1f; // radians per second
     const float MinTranslation = 0.00001f; // perfectly still devices are probably not tracking
     const float SustainedTranslationSpeed = 1f;
     const float MinimumStraightness = 0.97f;
@@ -16,7 +15,7 @@ public class Outliers
     readonly Queue<(Matrix4x4 Matrix, long Time)> _samples = new();
     int _recoveryCounter = 0;
 
-    public bool IsOutlierAndStore(Matrix4x4 sample)
+    public bool IsOutlierAndStore(Matrix4x4 sample, float maxRotationSpeed /* radians per second */)
     {
         var now = Stopwatch.GetTimestamp();
         if (_samples.Count == 0)
@@ -35,7 +34,7 @@ public class Outliers
 
         var outlier = !float.IsFinite(translation) || !float.IsFinite(angle) ||
             (seconds > 0f && (translation > TranslationSlack + MaxTranslationSpeed * seconds ||
-                              angle > RotationSlack + MaxRotationSpeed * seconds ||
+                              angle > RotationSlack + maxRotationSpeed * seconds ||
                               translation < MinTranslation));
         Store(sample, now);
         outlier |= IsSustainedDrift(now);

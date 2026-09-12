@@ -106,7 +106,7 @@ public static class Calibration
 
         // Nearly motionless pairs carry almost no orientation or arc
         // information; they only dilute the solve with noise.
-        if (RotationAngle(b) < MinimumRotation) return false;
+        if (Utilities.RotationAngle(b) < MinimumRotation) return false;
 
         if (Pairs.Count < MaxSamples * calibrateUpTo)
         {
@@ -121,13 +121,6 @@ public static class Calibration
         result = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation);
         result.Translation = translation;
         return true;
-    }
-
-    // Rotation angle of m in radians, independent of sign
-    static float RotationAngle(Matrix4x4 m)
-    {
-        var q = Quaternion.CreateFromRotationMatrix(m);
-        return 2f * MathF.Acos(Math.Clamp(MathF.Abs(q.W), 0f, 1f));
     }
 
     // Quaternion form of the rotation constraint. Matrix4x4 uses row vectors:

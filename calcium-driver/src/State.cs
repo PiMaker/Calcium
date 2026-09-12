@@ -16,6 +16,8 @@ public class State
     public PooledAtomicStrongBox<Matrix4x4> ActiveOffset = new(32, Matrix4x4.Identity); // offset of the rigidly mounted tracker from HMD root
     public PooledAtomicStrongBox<Matrix4x4> ActiveCorrection = new(32, Matrix4x4.Identity); // active world-space correction matrix
 
+    public volatile float LastCorrectionBlend = 0f;
+
     public void BeginCalibration()
     {
         if (Interlocked.CompareExchange(ref CalibrateUpTo, 1, 0) != 0) return;

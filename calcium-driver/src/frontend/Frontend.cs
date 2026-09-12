@@ -257,7 +257,7 @@ public class Frontend : IDisposable
                 }
                 else
                 {
-                    _helpText.Text = "Calibration found for active device. Everything should be working! ✔️";
+                    _helpText.Text = $"Calibration found for active device. Everything should be working! ✔️\nBlend factor: {State.Current.LastCorrectionBlend:P2}";
                 }
             }
             else

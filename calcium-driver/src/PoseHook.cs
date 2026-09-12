@@ -33,7 +33,7 @@ public static class PoseHook
                 // check for Hand controllers _before_ disconnect handling
                 // we expect these to stay connected forever once they show up, but they report as disconnected when not in view of tracking cams
                 var selfTrackingSpace = selfDevice.TrackingSpace;
-                if (string.IsNullOrEmpty(selfTrackingSpace) || selfDevice.SerialNumber.StartsWith("VRLINKQ_Hand"))
+                if (string.IsNullOrEmpty(selfTrackingSpace) || selfDevice.IsKnownHandTracking)
                     return;
 
                 if (pose.deviceIsConnected == 0)

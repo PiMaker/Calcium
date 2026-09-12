@@ -94,4 +94,7 @@ public class Device(uint id, string trackingSpace, string serialNumber, int devi
     } = serialNumber;
 
     public volatile int DeviceClass = deviceClass;
+
+    // TODO: Add more devices here
+    public bool IsKnownHandTracking => SerialNumber.StartsWith("VRLINKQ_Hand");
 }

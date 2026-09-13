@@ -18,7 +18,7 @@
 
   <ItemGroup>
     <Compile Include="..\vendor\MinHook.NET\**\*.cs" />
-    <Compile Include="..\vendor\win32-simple-gui\src\**\*.cs" />
+    <Compile Include="..\vendor\win32-simple-gui\src\*.cs" />
     <Compile Include="..\Version.cs" />
   </ItemGroup>
 

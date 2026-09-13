@@ -2,17 +2,17 @@ using System.Numerics;
 
 public static class PoseHook
 {
-    const float MaxRotationSpeedCorrecting = 2f; // radians per second
+    const float MaxRotationSpeedCorrecting = 1.25f; // radians per second
     const float MaxRotationSpeedCalibrating = 8f; // radians per second
 
-    const float MaxAngularVelocity = 2f;
-    const float MaxAngularAcceleration = 0.4f;
+    const float MaxAngularVelocity = 0.2f; // radians per second
+    const float MaxAngularAcceleration = 0.5f; // radians per second squared
 
-    const float BlendRotationFactor = 0.01f;
-    const float BlendTranslationFactor = 0.1f;
-    const float BlendScaleFactor = 0.002f;
+    const float BlendRotationFactor = 0.007f;
+    const float BlendTranslationFactor = 0.05f;
+    const float BlendScaleFactor = 0.001f;
 
-    const float TrackingJumpThreshold = 0.2f; // off by more than 20cm - consider tracking jump and correct immediately
+    const float TrackingJumpThreshold = 0.25f; // off by more than 25cm - consider tracking jump and correct immediately
     const float TrackingJumpRotThreshold = (float)Math.PI / 2f;
 
     static readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it
@@ -76,7 +76,7 @@ public static class PoseHook
                                   pose.poseIsValid != 0 &&
                                   pose.result == OpenVr.TrackingResultRunningOk &&
                                   !selfDevice.Outliers.IsOutlierAndStore(poseMatrix,
-                                      state.CalibrateUpTo > 0 ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting);
+                                      state.CalibrateUpTo > 0 ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting * State.Current.SensitivityFactor);
 
                     if (isValid)
                     {
@@ -126,18 +126,6 @@ public static class PoseHook
             // always call the original exactly once, even on early-out
             HookInjector._poseOriginal(self, deviceIndex, posePtr, structSize);
         }
-    }
-
-    static float GetDelta(Matrix4x4 a, Matrix4x4 b)
-    {
-        if (Matrix4x4.Decompose(a, out _, out var aRotation, out var aTranslation) &&
-            Matrix4x4.Decompose(b, out _, out var bRotation, out var bTranslation))
-        {
-            var deltaTranslation = Vector3.Distance(aTranslation, bTranslation);
-            var deltaRotation = Quaternion.Dot(aRotation, bRotation);
-            return deltaTranslation * 4f + (1.0f - deltaRotation) * 32f;
-        }
-        return 0f;
     }
 
     // must hold activeDevice.PoseLock, updates correction matrix
@@ -201,16 +189,16 @@ public static class PoseHook
         var maxVelocity = Math.Max(Math.Abs(angularVelocity.x), Math.Max(Math.Abs(angularVelocity.y), Math.Abs(angularVelocity.z)));
         var maxAcceleration = Math.Max(Math.Abs(angularAcceleration.x), Math.Max(Math.Abs(angularAcceleration.y), Math.Abs(angularAcceleration.z)));
 
-        var blendVelocity = 1f - Math.Min(maxVelocity / MaxAngularVelocity, 1f);
-        var blendAcceleration = 1f - Math.Min(maxAcceleration / MaxAngularAcceleration, 1f);
+        var blendVelocity = 1f - Math.Min(maxVelocity / (MaxAngularVelocity * State.Current.SensitivityFactor), 1f);
+        var blendAcceleration = 1f - Math.Min(maxAcceleration / (MaxAngularAcceleration * State.Current.SensitivityFactor), 1f);
 
         var blend = (float)Math.Min(blendVelocity, blendAcceleration);
         state.LastCorrectionBlend = blend;
 
         var correction = Utilities.Blend(prevCorrection, newCorrection,
-            tRot: blend * BlendRotationFactor,
-            tScale: blend * BlendScaleFactor,
-            tTranslate: blend * BlendTranslationFactor + translationDelta * BlendTranslationFactor /* linearize somewhat */);
+            tRot: blend * BlendRotationFactor * State.Current.SensitivityFactor,
+            tScale: blend * BlendScaleFactor * State.Current.SensitivityFactor,
+            tTranslate: blend * BlendTranslationFactor * State.Current.SensitivityFactor + translationDelta * BlendTranslationFactor /* linearize somewhat */);
 
         state.ActiveCorrection.Set(correction);
     }

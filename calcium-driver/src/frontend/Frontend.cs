@@ -20,6 +20,8 @@ public class Frontend : IDisposable
     Button _calibrateButton;
     Button _resetCalibrationButton;
     Checkbox _minimizeOnStartup;
+    Label _sensitivityLabel;
+    Slider _sensitivitySlider;
 
     readonly List<Device> _deviceCache = new();
     readonly List<string> _rows = new();
@@ -47,7 +49,7 @@ public class Frontend : IDisposable
             using var fontSmall = new Font("Segoe UI", 9f);
             using var fontMono = new Font("Consolas", 15f);
 
-            var window = new Window("Calcium", 680, 410, fontUI, icon)
+            var window = new Window("Calcium", 680, 440, fontUI, icon)
             {
                 CanMaximize = false,
                 CanResize = false,
@@ -59,7 +61,7 @@ public class Frontend : IDisposable
 
             var versionLabel = new Label("v" + CalciumVersion.Version)
             {
-                X = 590, Y = 380, Width = 40,
+                X = 630, Y = 5, Width = 40,
                 Foreground = Color.FromArgb(160, 160, 160),
                 Background = BackgroundColor,
             };
@@ -134,10 +136,33 @@ public class Frontend : IDisposable
             _minimizeOnStartup.Checked = State.Current.MinimizeOnStartup;
             _minimizeOnStartup.OnCheckedChanged += (_, on) => SetMinimizeOnStartup(on);
 
+            var sensitivityLayout = new HorizontalLayout() { Width = BaseLayout.Fill, Height = 40, Spacing = 8, Margin = new Margin(0, 0, 0, 8) };
+            _sensitivityLabel = new Label($"Sensitivity ({State.Current.SensitivityFactor:P0}):", centerVertically: true)
+            {
+                Width = 140,
+                Height = 40,
+                Foreground = ForegroundColor,
+                Background = BackgroundColor,
+            };
+            sensitivityLayout.Children.Add(_sensitivityLabel);
+            _sensitivitySlider = new Slider()
+            {
+                Width = BaseLayout.Fill,
+                Height = 40,
+                Margin = new Margin(0, 8, 0, 0),
+            };
+            _sensitivitySlider.OnValueChanged += (_, value) => SetSensitivity((int)value);
+            sensitivityLayout.Children.Add(_sensitivitySlider);
+            layout.Children.Add(sensitivityLayout);
+
             window.Arrange(); // run layout pass once
             background.SendToBack();
             _window = window;
             _windowCreated.Set();
+
+            _sensitivitySlider.Min = 1;
+            _sensitivitySlider.Max = 200;
+            _sensitivitySlider.Value = State.Current.Sensitivity;
 
             Application.ScheduleTimer(RefreshDevices, 250);
             RefreshDevices();
@@ -182,7 +207,7 @@ public class Frontend : IDisposable
             // set rows in place when the device count is stable, reset the list when it changed;
             // per-tick garbage is limited to the item strings themselves
             _rows.Clear();
-            _rows.Add("Space Correction Disabled");
+            _rows.Add("    Space Correction Disabled");
             foreach (var d in _deviceCache)
                 AppendDeviceRow(d);
 
@@ -282,7 +307,7 @@ public class Frontend : IDisposable
     void AppendDeviceRow(Device d)
     {
         _row.Clear();
-        if (d.ID >= 10) _row.Append(" ").Append(d.ID);
+        if (d.ID >= 10) _row.Append(' ').Append(d.ID);
         else _row.Append("  ").Append(d.ID);
         _row.Append(' ');
         AppendField(d.TrackingSpace, 11);
@@ -305,14 +330,16 @@ public class Frontend : IDisposable
         {
             if (_lastDevicePositions.TryGetValue(d.ID, out var pos))
             {
-                _row.Append(pos.X.ToString("F1")).Append(',');
-                _row.Append(pos.Y.ToString("F1")).Append(',');
-                _row.Append(pos.Z.ToString("F1"));
+                _row.Append(FloatToString(pos.X)).Append(',');
+                _row.Append(FloatToString(pos.Y)).Append(',');
+                _row.Append(FloatToString(pos.Z));
             }
             else
             {
-                _row.Append("N/A     ");
+                _row.Append(" N/A");
             }
+
+            string FloatToString(float value) => value < 0 ? value.ToString("F1") : " " + value.ToString("F1");
         }
     }
 
@@ -373,6 +400,13 @@ public class Frontend : IDisposable
     {
         State.Current.MinimizeOnStartup = minimize;
         State.Current.WriteToDisk();
+    }
+
+    void SetSensitivity(int sensitivity)
+    {
+        State.Current.Sensitivity = sensitivity;
+        State.Current.WriteToDisk();
+        _sensitivityLabel.Text = $"Sensitivity ({State.Current.SensitivityFactor:P0}):";
     }
 
     public void Dispose()

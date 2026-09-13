@@ -19,12 +19,12 @@ public static class Calibration
     internal static Lock CalibrationLock = new();
     internal static bool Active => _active;
 
-    public const int CalibrationSteps = 4;
-    public const int MaxSamples = 128;
+    public const int CalibrationSteps = 2;
+    public const int MaxSamples = 256;
     public static int CollectedSampleCount => Pairs.Count;
 
-    static readonly double[,] _rotationScratch4x4 = new double[4, 4];
-    static readonly double[,] _rotationScratch3x3 = new double[3, 3];
+    static readonly double[,] _scratch4x4 = new double[4, 4];
+    static readonly double[,] _scratch3x3 = new double[3, 3];
 
     internal static void Stop()
     {
@@ -147,7 +147,7 @@ public static class Calibration
         // qM * qA - qB * qM = 0 as C * qM = 0, we get C = R(qA) - L(qB).
         // Accumulating C^T * C into RotationNormal sums the squared residuals
         // of all pairs into one quadratic form in qM.
-        var c = _rotationScratch4x4; // new double[4, 4]
+        var c = _scratch4x4; // new double[4, 4]
         Right(qa, c); // c = R(qa)
         SubtractLeft(qb, c); // c = R(qa) - L(qb)
         for (var row = 0; row < 4; row++)
@@ -180,7 +180,7 @@ public static class Calibration
     static bool SolveRotation(out Quaternion rotation)
     {
         var a = (double[,])RotationNormal.Clone();
-        var vectors = _rotationScratch4x4; Array.Clear(vectors); // new double[4, 4]
+        var vectors = _scratch4x4; Array.Clear(vectors); // new double[4, 4]
         for (var i = 0; i < 4; i++) vectors[i, i] = 1;
 
         for (var iteration = 0; iteration < 42; iteration++)
@@ -265,8 +265,8 @@ public static class Calibration
     static bool SolveSimilarity(Quaternion rotation, out Vector3 translation, out float scale)
     {
         var rm = Matrix4x4.CreateFromQuaternion(rotation);
-        var c = _rotationScratch3x3; // new double[3, 3]
-        var normal = _rotationScratch4x4; Array.Clear(normal); // new double[4, 4]
+        var c = _scratch3x3; // new double[3, 3]
+        var normal = _scratch4x4; Array.Clear(normal); // new double[4, 4]
         Span<double> rhs = stackalloc double[4]; rhs.Clear();
         Span<double> u = stackalloc double[3];
         Span<double> bv = stackalloc double[3];
@@ -322,7 +322,7 @@ public static class Calibration
     static bool Solve(double[,] normal, Span<double> rhs, ref Span<double> x)
     {
         var n = rhs.Length;
-        var a = new double[n, n + 1];
+        var a = new double[n, n + 1]; // technically n is constant, but let's just eat this one array alloc
         var scale = 0d;
         for (var row = 0; row < n; row++)
             for (var col = 0; col < n; col++)

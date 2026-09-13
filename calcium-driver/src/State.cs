@@ -9,6 +9,9 @@ public class State
     public volatile uint ActiveTargetIndex = 0;
     public volatile int CalibrateUpTo = 0;
 
+    public volatile int Sensitivity = 100; // default sensitivity value (0-200)
+    public float SensitivityFactor => Sensitivity / 100f;
+
     public bool MinimizeOnStartup = false;
 
     public readonly ConcurrentDictionary<uint, Device> Devices = new();
@@ -39,7 +42,7 @@ public class State
     {
         var offset = ActiveOffset.Value;
         var path = Path.Combine(Utilities.GetDataPath(), "settings.ini");
-        var ini = $"TargetSerialNumber = {Volatile.Read(ref ActiveSerialNumber)}{Environment.NewLine}ActiveOffset = {Utilities.SerializeMatrix(offset)}{Environment.NewLine}MinimizeOnStartup = {MinimizeOnStartup}";
+        var ini = $"TargetSerialNumber = {Volatile.Read(ref ActiveSerialNumber)}{Environment.NewLine}ActiveOffset = {Utilities.SerializeMatrix(offset)}{Environment.NewLine}MinimizeOnStartup = {MinimizeOnStartup}{Environment.NewLine}Sensitivity = {Sensitivity}";
         File.WriteAllText(path, ini);
         Utilities.Log($"Wrote settings to disk at {path}");
     }
@@ -61,6 +64,7 @@ public class State
                 if (key == "TargetSerialNumber") Interlocked.Exchange(ref ActiveSerialNumber, value);
                 if (key == "ActiveOffset") ActiveOffset.Set(Utilities.DeserializeMatrix(value).GetValueOrDefault(Matrix4x4.Identity));
                 if (key == "MinimizeOnStartup") MinimizeOnStartup = bool.Parse(value);
+                if (key == "Sensitivity") Sensitivity = int.Parse(value);
             }
             Utilities.Log($"Read settings from disk from {path}");
         }

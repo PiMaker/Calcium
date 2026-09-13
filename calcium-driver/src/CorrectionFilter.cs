@@ -1,33 +1,53 @@
-
 using System.Numerics;
+using System.Diagnostics;
 
 public class CorrectionFilter
 {
+    const float TranslationSpeed = 0.4f;
+    const float RotationSpeed = 0.04f;
+    const float ScaleSpeed = 0.0025f;
+
+    bool _initialized;
+    long _lastTime;
+
+    Vector3 _translation;
+    Quaternion _rotation;
+    Vector3 _scale;
+
     public void Init(in Matrix4x4 initialData)
     {
-        // TODO
+        if (Matrix4x4.Decompose(initialData, out _scale, out _rotation, out _translation))
+            _initialized = true;
+
+        _lastTime = Stopwatch.GetTimestamp();
     }
 
     public Matrix4x4 ApplyFilter(in Matrix4x4 newData, float speed)
     {
-        return newData; // TODO
+        var now = Stopwatch.GetTimestamp();
+        var dt = (now - _lastTime) / (float)Stopwatch.Frequency;
+
+        if (!_initialized)
+            return newData;
+
+        _lastTime = now;
+
+        if (!Matrix4x4.Decompose(newData, out var newScale, out var newRotation, out var newTranslation))
+            return newData;
+
+        static float RateToAlpha(float rate, float dt) => 1f - MathF.Exp(-rate * dt);
+
+        _translation = Vector3.Lerp(_translation, newTranslation, RateToAlpha(speed * TranslationSpeed, dt));
+        _rotation = Quaternion.Slerp(_rotation, newRotation, RateToAlpha(speed * RotationSpeed, dt));
+        _scale = Vector3.Lerp(_scale, newScale, RateToAlpha(speed * ScaleSpeed, dt));
+
+        return Compose();
     }
 
-    // TODO: old helper function, delete if not used, or rewrite
-    private static Matrix4x4 Blend(in Matrix4x4 a, in Matrix4x4 b, float tRot, float tScale, float tTranslate)
+    Matrix4x4 Compose()
     {
-        tRot = Math.Clamp(tRot, 0f, 1f);
-        tScale = Math.Clamp(tScale, 0f, 1f);
-        tTranslate = Math.Clamp(tTranslate, 0f, 1f);
-
-        if (Matrix4x4.Decompose(a, out var aScale, out var aRotation, out var aTranslation) &&
-            Matrix4x4.Decompose(b, out var bScale, out var bRotation, out var bTranslation))
-        {
-            var scale = Vector3.Lerp(aScale, bScale, tScale);
-            var rotation = Quaternion.Slerp(aRotation, bRotation, tRot);
-            var translation = Vector3.Lerp(aTranslation, bTranslation, tTranslate);
-            return Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(translation);
-        }
-        return a;
+        var result = Matrix4x4.CreateScale(_scale) * Matrix4x4.CreateFromQuaternion(_rotation);
+        result.Translation = _translation;
+        return result;
     }
 }

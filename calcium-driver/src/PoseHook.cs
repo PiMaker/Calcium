@@ -2,7 +2,7 @@ using System.Numerics;
 
 public static class PoseHook
 {
-    const float MaxRotationSpeedCorrecting = 1f; // radians per second
+    const float MaxRotationSpeedCorrecting = 0.75f; // radians per second
     const float MaxRotationSpeedCalibrating = 4f; // radians per second
 
     const float TrackingJumpThreshold = 0.8f; // off by more than 80cm - consider tracking jump and correct immediately
@@ -80,7 +80,7 @@ public static class PoseHook
 
                         // handle running correction and calibration
                         if (isActiveTracker)
-                            HandleValidActiveTrackerPose(state, poseMatrix, ref pose);
+                            HandleValidActiveTrackerPose(state, poseMatrix);
                     }
                     else
                     {
@@ -124,7 +124,7 @@ public static class PoseHook
     }
 
     // must hold activeDevice.PoseLock, updates correction matrix
-    static void HandleValidActiveTrackerPose(State state, Matrix4x4 poseMatrix, ref DriverPose_t pose)
+    static void HandleValidActiveTrackerPose(State state, Matrix4x4 poseMatrix)
     {
         // check if we and the HMD have a valid, recent pose
         if (!Matrix4x4.Invert(poseMatrix, out var activeInverse) ||
@@ -137,6 +137,7 @@ public static class PoseHook
         if (hmdPose.IsIdentity) return;
 
         // calibration logic, if requested
+        var resetFilter = false;
         var calibrate = state.CalibrateUpTo;
         if (calibrate > 0)
         {
@@ -145,6 +146,7 @@ public static class PoseHook
                 if (Calibration.Update(activeInverse, hmdPose, out var result, calibrate))
                 {
                     state.ActiveOffset.Set(result);
+                    resetFilter = true;
                 }
             }
         }
@@ -158,16 +160,16 @@ public static class PoseHook
         // - hmdPose: from 0,0,0 to HMD's position/rotation
         //   -> we finally move it all into HMD's space
         var correction = activeInverse * state.ActiveOffset.Value * hmdPose;
-        BlendIntoCorrection(state, correction, ref pose);
+        BlendIntoCorrection(state, correction, resetFilter);
     }
 
-    static void BlendIntoCorrection(State state, Matrix4x4 newCorrection, ref DriverPose_t pose) // -> into state.ActiveCorrection
+    static void BlendIntoCorrection(State state, Matrix4x4 newCorrection, bool resetFilter) // -> into state.ActiveCorrection
     {
         var prevCorrection = state.ActiveCorrection.Value;
 
         var translationDelta = Vector3.Distance(prevCorrection.Translation, newCorrection.Translation);
         var angularDelta = Matrix4x4.Invert(newCorrection, out var inverted) ? Utilities.RotationAngle(prevCorrection * inverted) : 0f;
-        if (translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold)
+        if (translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold || resetFilter)
         {
             Utilities.Log($"Tracking jump detected: {translationDelta}m, {angularDelta:F4}rad");
             state.ActiveCorrection.Set(newCorrection);

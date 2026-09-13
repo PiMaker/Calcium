@@ -9,8 +9,6 @@ using System.Collections.Concurrent;
 public static class Calibration
 {
     const float MinimumRotation = 0.0225f; // Ignore pairs with very small motion
-    static readonly double[,] RotationNormal = new double[4, 4];
-    static readonly ConcurrentQueue<(Matrix4x4 A, Matrix4x4 B)> Pairs = new();
 
     static bool _active;
     static Matrix4x4 _targetInverse;
@@ -23,6 +21,11 @@ public static class Calibration
     public const int MaxSamples = 512;
     public static int CollectedSampleCount => Pairs.Count;
 
+    static readonly ConcurrentQueue<(Matrix4x4 A, Matrix4x4 B)> Pairs = new();
+    static readonly double[,] RotationNormal = new double[4, 4];
+
+    const int RhsSize = 4;
+    static readonly double[,] _rhsScratch = new double[RhsSize, RhsSize + 1];
     static readonly double[,] _scratch4x4 = new double[4, 4];
     static readonly double[,] _scratch3x3 = new double[3, 3];
 
@@ -267,7 +270,7 @@ public static class Calibration
         var rm = Matrix4x4.CreateFromQuaternion(rotation);
         var c = _scratch3x3; // new double[3, 3]
         var normal = _scratch4x4; Array.Clear(normal); // new double[4, 4]
-        Span<double> rhs = stackalloc double[4]; rhs.Clear();
+        Span<double> rhs = stackalloc double[RhsSize]; rhs.Clear();
         Span<double> u = stackalloc double[3];
         Span<double> bv = stackalloc double[3];
         Span<double> row = stackalloc double[4];
@@ -322,7 +325,7 @@ public static class Calibration
     static bool Solve(double[,] normal, Span<double> rhs, ref Span<double> x)
     {
         var n = rhs.Length;
-        var a = new double[n, n + 1]; // technically n is constant, but let's just eat this one array alloc
+        var a = _rhsScratch; Array.Clear(a); // new double[RhsSize, RhsSize + 1]
         var scale = 0d;
         for (var row = 0; row < n; row++)
             for (var col = 0; col < n; col++)

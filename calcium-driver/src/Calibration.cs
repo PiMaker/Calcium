@@ -8,7 +8,7 @@ using System.Collections.Concurrent;
 
 public static class Calibration
 {
-    const float MinimumRotation = 0.025f; // Ignore pairs with very small motion
+    const float MinimumRotation = 0.0225f; // Ignore pairs with very small motion
     static readonly double[,] RotationNormal = new double[4, 4];
     static readonly ConcurrentQueue<(Matrix4x4 A, Matrix4x4 B)> Pairs = new();
 
@@ -19,8 +19,8 @@ public static class Calibration
     internal static Lock CalibrationLock = new();
     internal static bool Active => _active;
 
-    public const int CalibrationSteps = 2;
-    public const int MaxSamples = 256;
+    public const int CalibrationSteps = 1; // Multi-step calibration doesn't seem to really improve result ¯\_(ツ)_/¯
+    public const int MaxSamples = 512;
     public static int CollectedSampleCount => Pairs.Count;
 
     static readonly double[,] _scratch4x4 = new double[4, 4];

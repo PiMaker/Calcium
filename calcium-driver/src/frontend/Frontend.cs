@@ -20,8 +20,8 @@ public class Frontend : IDisposable
     Button _calibrateButton;
     Button _resetCalibrationButton;
     Checkbox _minimizeOnStartup;
-    Label _sensitivityLabel;
-    Slider _sensitivitySlider;
+    Label _speedLabel;
+    Slider _speedSlider;
 
     readonly List<Device> _deviceCache = new();
     readonly List<string> _rows = new();
@@ -67,7 +67,7 @@ public class Frontend : IDisposable
             };
             window.Children.Add(versionLabel);
 
-            var background = new Panel(0, 0, window.Width, window.Height, BackgroundColor);
+            var background = new Panel(0, 0, window.Width, window.Height - 40, BackgroundColor);
             window.Children.Add(background);
 
             var layout = new VerticalLayout { Width = BaseLayout.Fill, Height = BaseLayout.Fill, Margin = new Margin(8, 8) };
@@ -136,33 +136,33 @@ public class Frontend : IDisposable
             _minimizeOnStartup.Checked = State.Current.MinimizeOnStartup;
             _minimizeOnStartup.OnCheckedChanged += (_, on) => SetMinimizeOnStartup(on);
 
-            var sensitivityLayout = new HorizontalLayout() { Width = BaseLayout.Fill, Height = 40, Spacing = 8, Margin = new Margin(0, 0, 0, 8) };
-            _sensitivityLabel = new Label($"Sensitivity ({State.Current.SensitivityFactor:P0}):", centerVertically: true)
+            var speedLayout = new HorizontalLayout() { Width = BaseLayout.Fill, Height = 40, Spacing = 8, Margin = new Margin(0, 0, 0, 8) };
+            _speedLabel = new Label($"Speed ({State.Current.SpeedFactor:P0}):", centerVertically: true)
             {
                 Width = 140,
                 Height = 40,
                 Foreground = ForegroundColor,
                 Background = BackgroundColor,
             };
-            sensitivityLayout.Children.Add(_sensitivityLabel);
-            _sensitivitySlider = new Slider()
+            speedLayout.Children.Add(_speedLabel);
+            _speedSlider = new Slider()
             {
                 Width = BaseLayout.Fill,
                 Height = 40,
                 Margin = new Margin(0, 8, 0, 0),
             };
-            _sensitivitySlider.OnValueChanged += (_, value) => SetSensitivity((int)value);
-            sensitivityLayout.Children.Add(_sensitivitySlider);
-            layout.Children.Add(sensitivityLayout);
+            _speedSlider.OnValueChanged += (_, value) => SetSpeed((int)value);
+            speedLayout.Children.Add(_speedSlider);
+            layout.Children.Add(speedLayout);
 
             window.Arrange(); // run layout pass once
             background.SendToBack();
             _window = window;
             _windowCreated.Set();
 
-            _sensitivitySlider.Min = 1;
-            _sensitivitySlider.Max = 200;
-            _sensitivitySlider.Value = State.Current.Sensitivity;
+            _speedSlider.Min = 1;
+            _speedSlider.Max = 200;
+            _speedSlider.Value = State.Current.Speed;
 
             Application.ScheduleTimer(RefreshDevices, 250);
             RefreshDevices();
@@ -402,11 +402,11 @@ public class Frontend : IDisposable
         State.Current.WriteToDisk();
     }
 
-    void SetSensitivity(int sensitivity)
+    void SetSpeed(int speed)
     {
-        State.Current.Sensitivity = sensitivity;
+        State.Current.Speed = speed;
         State.Current.WriteToDisk();
-        _sensitivityLabel.Text = $"Sensitivity ({State.Current.SensitivityFactor:P0}):";
+        _speedLabel.Text = $"Speed ({State.Current.SpeedFactor:P0}):";
     }
 
     public void Dispose()

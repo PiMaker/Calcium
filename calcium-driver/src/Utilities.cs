@@ -66,23 +66,6 @@ public static class Utilities
     public static float RotationAngle(Matrix4x4 m) => RotationAngle(Quaternion.CreateFromRotationMatrix(m));
     public static float RotationAngle(Quaternion q) => 2f * MathF.Acos(Math.Clamp(MathF.Abs(q.W), 0f, 1f));
 
-    public static Matrix4x4 Blend(in Matrix4x4 a, in Matrix4x4 b, float tRot, float tScale, float tTranslate)
-    {
-        tRot = Math.Clamp(tRot, 0f, 1f);
-        tScale = Math.Clamp(tScale, 0f, 1f);
-        tTranslate = Math.Clamp(tTranslate, 0f, 1f);
-
-        if (Matrix4x4.Decompose(a, out var aScale, out var aRotation, out var aTranslation) &&
-            Matrix4x4.Decompose(b, out var bScale, out var bRotation, out var bTranslation))
-        {
-            var scale = Vector3.Lerp(aScale, bScale, tScale);
-            var rotation = Quaternion.Slerp(aRotation, bRotation, tRot);
-            var translation = Vector3.Lerp(aTranslation, bTranslation, tTranslate);
-            return Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(translation);
-        }
-        return a;
-    }
-
     public static Matrix4x4 GetPoseMatrix(in DriverPose_t pose)
     {
         var raw = Matrix4x4.CreateFromQuaternion(pose.qRotation.ToNumerics());

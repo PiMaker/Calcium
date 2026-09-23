@@ -7,7 +7,7 @@ public class CorrectionFilter
     const float RotationSpeed = 0.04f;
     const float ScaleSpeed = 0.0025f;
 
-    const float TrackingJumpThreshold = 0.8f; // off by more than 80cm - consider tracking jump and correct immediately
+    const float TrackingJumpThreshold = 0.75f; // off by more than 75cm - consider tracking jump and correct immediately
     const float TrackingJumpRotThreshold = (float)Math.PI / 2f;
 
     bool _initialized;
@@ -16,6 +16,20 @@ public class CorrectionFilter
     Vector3 _translation;
     Quaternion _rotation;
     Vector3 _scale;
+
+    public Matrix4x4 ApplyFilter(in Matrix4x4 prevCorrection, in Matrix4x4 newCorrection, bool resetFilter, float speed)
+    {
+        var translationDelta = Vector3.Distance(prevCorrection.Translation, newCorrection.Translation);
+        var angularDelta = Matrix4x4.Invert(newCorrection, out var inverted) ? Utilities.RotationAngle(prevCorrection * inverted) : 0f;
+        if (translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold || resetFilter)
+        {
+            Utilities.Log($"Tracking jump detected: {translationDelta}m, {angularDelta:F4}rad");
+            Init(newCorrection);
+            return newCorrection;
+        }
+
+        return ComputeSmoothed(newCorrection, speed);
+    }
 
     private void Init(in Matrix4x4 initialData)
     {
@@ -47,19 +61,5 @@ public class CorrectionFilter
         var result = Matrix4x4.CreateScale(_scale) * Matrix4x4.CreateFromQuaternion(_rotation);
         result.Translation = _translation;
         return result;
-    }
-
-    public Matrix4x4 ApplyFilter(in Matrix4x4 prevCorrection, in Matrix4x4 newCorrection, bool resetFilter, float speed)
-    {
-        var translationDelta = Vector3.Distance(prevCorrection.Translation, newCorrection.Translation);
-        var angularDelta = Matrix4x4.Invert(newCorrection, out var inverted) ? Utilities.RotationAngle(prevCorrection * inverted) : 0f;
-        if (translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold || resetFilter)
-        {
-            Utilities.Log($"Tracking jump detected: {translationDelta}m, {angularDelta:F4}rad");
-            Init(newCorrection);
-            return newCorrection;
-        }
-
-        return ComputeSmoothed(newCorrection, speed);
     }
 }

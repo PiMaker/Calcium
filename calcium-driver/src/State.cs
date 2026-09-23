@@ -74,23 +74,12 @@ public class Device(uint id, string trackingSpace, string serialNumber, int devi
     public uint ID { get; } = id;
 
     public readonly Lock PoseGate = new(); // Used externally in PoseHook to prevent re-entrance on the same id
-    private readonly Lock _gate = new(); // Used internally for thread-safe access to properties
 
     public readonly Outliers Outliers = new();
     public PooledAtomicStrongBox<Matrix4x4> LastPose { get; } = new(16, Matrix4x4.Identity);
 
-    public string TrackingSpace
-    {
-        get { lock (_gate) { return field; } }
-        set { lock (_gate) { field = value; } }
-    } = trackingSpace;
-
-    public string SerialNumber
-    {
-        get { lock (_gate) { return field; } }
-        set { lock (_gate) { field = value; } }
-    } = serialNumber;
-
+    public volatile string TrackingSpace = trackingSpace;
+    public volatile string SerialNumber = serialNumber;
     public volatile int DeviceClass = deviceClass;
 
     // TODO: Add more devices here

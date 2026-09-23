@@ -94,6 +94,8 @@ public static class Calibration
             _active = true;
             _targetInverse = targetInverse;
             _prevHmdInverse = currentHmdInverse;
+            Array.Clear(RotationNormal);
+            Pairs.Clear();
             return false;
         }
 

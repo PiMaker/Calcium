@@ -56,7 +56,7 @@ public static class PoseHook
                 if (selfDevice.DeviceClass == OpenVr.DeviceClassTrackingReference)
                 {
                     // basestations should still be shifted, but aren't needed for calibration
-                    selfDevice.LastPose.Set(poseMatrix);
+                    //selfDevice.LastPose.Set(poseMatrix);
                     if (activeTargetIndex != 0 && selfDevice.TrackingSpace == correctedTrackingSpace)
                         Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
                     return;
@@ -79,11 +79,15 @@ public static class PoseHook
                         if (isActiveTracker)
                             HandleValidActiveTrackerPose(state, poseMatrix);
                     }
-                    else
+                    else if (deviceIndex == 0 /* HMD */)
                     {
                         // ignore outlier/error pose, reset LastPose to indicate for calibration to skip a step
-                        // still apply offset below though
                         selfDevice.LastPose.Set(Matrix4x4.Identity);
+                    }
+                    else
+                    {
+                        // TODO: For debugging trackers that die in UI
+                        selfDevice.LastPose.Set(poseMatrix);
                     }
 
                     if (deviceIndex != 0 /* HMD */ && activeTargetIndex != 0 &&

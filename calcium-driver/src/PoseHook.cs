@@ -5,10 +5,7 @@ public static class PoseHook
     const float MaxRotationSpeedCorrecting = 0.75f; // radians per second
     const float MaxRotationSpeedCalibrating = 4f; // radians per second
 
-    const float TrackingJumpThreshold = 0.8f; // off by more than 80cm - consider tracking jump and correct immediately
-    const float TrackingJumpRotThreshold = (float)Math.PI / 2f;
-
-    static CorrectionFilter _filter = new();
+    static readonly CorrectionFilter _filter = new();
 
     static readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it
 
@@ -160,25 +157,8 @@ public static class PoseHook
         // - hmdPose: from 0,0,0 to HMD's position/rotation
         //   -> we finally move it all into HMD's space
         var correction = activeInverse * state.ActiveOffset.Value * hmdPose;
-        BlendIntoCorrection(state, correction, resetFilter);
-    }
-
-    static void BlendIntoCorrection(State state, Matrix4x4 newCorrection, bool resetFilter) // -> into state.ActiveCorrection
-    {
-        var prevCorrection = state.ActiveCorrection.Value;
-
-        var translationDelta = Vector3.Distance(prevCorrection.Translation, newCorrection.Translation);
-        var angularDelta = Matrix4x4.Invert(newCorrection, out var inverted) ? Utilities.RotationAngle(prevCorrection * inverted) : 0f;
-        if (translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold || resetFilter)
-        {
-            Utilities.Log($"Tracking jump detected: {translationDelta}m, {angularDelta:F4}rad");
-            state.ActiveCorrection.Set(newCorrection);
-            _filter.Init(newCorrection);
-            return;
-        }
-
-        var correction = _filter.ApplyFilter(newCorrection, state.SpeedFactor);
-        state.ActiveCorrection.Set(correction);
+        var newCorrection = _filter.ApplyFilter(state.ActiveCorrection.Value, correction, resetFilter, state.SpeedFactor);
+        state.ActiveCorrection.Set(newCorrection);
     }
 
     static void InsertDevice(State state, uint id)

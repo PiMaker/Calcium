@@ -7,6 +7,9 @@ public class CorrectionFilter
     const float RotationSpeed = 0.04f;
     const float ScaleSpeed = 0.0025f;
 
+    const float TrackingJumpThreshold = 0.8f; // off by more than 80cm - consider tracking jump and correct immediately
+    const float TrackingJumpRotThreshold = (float)Math.PI / 2f;
+
     bool _initialized;
     long _lastTime;
 
@@ -14,7 +17,7 @@ public class CorrectionFilter
     Quaternion _rotation;
     Vector3 _scale;
 
-    public void Init(in Matrix4x4 initialData)
+    private void Init(in Matrix4x4 initialData)
     {
         if (Matrix4x4.Decompose(initialData, out _scale, out _rotation, out _translation))
             _initialized = true;
@@ -22,7 +25,7 @@ public class CorrectionFilter
         _lastTime = Stopwatch.GetTimestamp();
     }
 
-    public Matrix4x4 ApplyFilter(in Matrix4x4 newData, float speed)
+    private Matrix4x4 ComputeSmoothed(in Matrix4x4 newData, float speed)
     {
         var now = Stopwatch.GetTimestamp();
         var dt = (now - _lastTime) / (float)Stopwatch.Frequency;
@@ -41,13 +44,22 @@ public class CorrectionFilter
         _rotation = Quaternion.Slerp(_rotation, newRotation, RateToAlpha(speed * RotationSpeed, dt));
         _scale = Vector3.Lerp(_scale, newScale, RateToAlpha(speed * ScaleSpeed, dt));
 
-        return Compose();
-    }
-
-    Matrix4x4 Compose()
-    {
         var result = Matrix4x4.CreateScale(_scale) * Matrix4x4.CreateFromQuaternion(_rotation);
         result.Translation = _translation;
         return result;
+    }
+
+    public Matrix4x4 ApplyFilter(in Matrix4x4 prevCorrection, in Matrix4x4 newCorrection, bool resetFilter, float speed)
+    {
+        var translationDelta = Vector3.Distance(prevCorrection.Translation, newCorrection.Translation);
+        var angularDelta = Matrix4x4.Invert(newCorrection, out var inverted) ? Utilities.RotationAngle(prevCorrection * inverted) : 0f;
+        if (translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold || resetFilter)
+        {
+            Utilities.Log($"Tracking jump detected: {translationDelta}m, {angularDelta:F4}rad");
+            Init(newCorrection);
+            return newCorrection;
+        }
+
+        return ComputeSmoothed(newCorrection, speed);
     }
 }

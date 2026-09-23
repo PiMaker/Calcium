@@ -22,6 +22,7 @@ public class Frontend : IDisposable
     Checkbox _minimizeOnStartup;
     Label _speedLabel;
     Slider _speedSlider;
+    Label _versionLabel;
 
     readonly List<Device> _deviceCache = new();
     readonly List<string> _rows = new();
@@ -120,19 +121,19 @@ public class Frontend : IDisposable
             _minimizeOnStartup.Checked = State.Current.MinimizeOnStartup;
             _minimizeOnStartup.OnCheckedChanged += (_, on) => SetMinimizeOnStartup(on);
 
-            var versionLabel = new Label("v" + CalciumVersion.Version, centerVertically: true)
+            _versionLabel = new Label("v" + CalciumVersion.Version, centerVertically: true)
             {
-                Width = 40,
+                Width = 60,
                 Height = 40,
                 Foreground = Color.FromArgb(160, 160, 160),
                 Background = BackgroundColor,
             };
-            buttons.Children.Add(versionLabel);
+            buttons.Children.Add(_versionLabel);
 
             var speedLayout = new HorizontalLayout() { Width = BaseLayout.Fill, Height = 40, Spacing = 8, Margin = new Margin(0, 8, 0, 0) };
             _speedLabel = new Label($"Correction Speed ({State.Current.SpeedFactor:P0}):", centerVertically: true)
             {
-                Width = 160,
+                Width = 180,
                 Height = 40,
             };
             speedLayout.Children.Add(_speedLabel);
@@ -257,7 +258,7 @@ public class Frontend : IDisposable
                 if (!hasCalibration)
                     _helpText.Text = "No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️";
                 else
-                    _helpText.Text = $"Calibration found for active device. Everything should be working! ✔️";
+                    _helpText.Text = "Calibration found for active device. Everything should be working! ✔️";
             }
             else
             {
@@ -270,6 +271,9 @@ public class Frontend : IDisposable
                 State.Current.WriteToDisk();
                 _lastSpeedChange = null;
             }
+
+            // debug
+            _versionLabel.Text = GC.GetTotalAllocatedBytes(true).ToString();
         }
         catch (Exception ex)
         {

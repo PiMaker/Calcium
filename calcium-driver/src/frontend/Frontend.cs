@@ -27,7 +27,7 @@ public class Frontend : IDisposable
     readonly List<string> _rows = new();
     readonly StringBuilder _row = new();
     readonly Dictionary<uint, Vector3> _lastDevicePositions = new();
-    int playedSoundForStage = -1;
+    DateTimeOffset? _lastSpeedChange;
 
     public Frontend()
     {
@@ -49,7 +49,7 @@ public class Frontend : IDisposable
             using var fontSmall = new Font("Segoe UI", 9f);
             using var fontMono = new Font("Consolas", 15f);
 
-            var window = new Window("Calcium", 680, 440, fontUI, icon)
+            var window = new Window("Calcium", 700, 430, fontUI, icon)
             {
                 CanMaximize = false,
                 CanResize = false,
@@ -59,27 +59,11 @@ public class Frontend : IDisposable
                     "Closing this window stops tracking correction until you restart SteamVR.",
                     icon, MessageBoxIcon.Question);
 
-            var versionLabel = new Label("v" + CalciumVersion.Version)
-            {
-                X = 630, Y = 5, Width = 40,
-                Foreground = Color.FromArgb(160, 160, 160),
-                Background = BackgroundColor,
-            };
-            window.Children.Add(versionLabel);
-
-            var background = new Panel(0, 0, window.Width, window.Height - 40, BackgroundColor);
+            var background = new Panel(0, 0, window.Width, window.Height - 50, BackgroundColor);
             window.Children.Add(background);
 
             var layout = new VerticalLayout { Width = BaseLayout.Fill, Height = BaseLayout.Fill, Margin = new Margin(8, 8) };
             window.Children.Add(layout);
-
-            layout.Children.Add(new Label("Select Tracker mounted to Headset:")
-            {
-                Width = BaseLayout.Fill,
-                Height = 28,
-                Foreground = ForegroundColor,
-                Background = BackgroundColor,
-            });
 
             _deviceList = new ListBox
             {
@@ -126,7 +110,7 @@ public class Frontend : IDisposable
             };
             var minimizeLabel = new Label("Minimize on Startup", centerVertically: true)
             {
-                Width = 180,
+                Width = BaseLayout.Fill,
                 Height = 37,
                 Foreground = ForegroundColor,
                 Background = BackgroundColor,
@@ -136,13 +120,20 @@ public class Frontend : IDisposable
             _minimizeOnStartup.Checked = State.Current.MinimizeOnStartup;
             _minimizeOnStartup.OnCheckedChanged += (_, on) => SetMinimizeOnStartup(on);
 
-            var speedLayout = new HorizontalLayout() { Width = BaseLayout.Fill, Height = 40, Spacing = 8, Margin = new Margin(0, 0, 0, 8) };
-            _speedLabel = new Label($"Speed ({State.Current.SpeedFactor:P0}):", centerVertically: true)
+            var versionLabel = new Label("v" + CalciumVersion.Version, centerVertically: true)
             {
-                Width = 140,
+                Width = 40,
                 Height = 40,
-                Foreground = ForegroundColor,
+                Foreground = Color.FromArgb(160, 160, 160),
                 Background = BackgroundColor,
+            };
+            buttons.Children.Add(versionLabel);
+
+            var speedLayout = new HorizontalLayout() { Width = BaseLayout.Fill, Height = 40, Spacing = 8, Margin = new Margin(0, 8, 0, 0) };
+            _speedLabel = new Label($"Correction Speed ({State.Current.SpeedFactor:P0}):", centerVertically: true)
+            {
+                Width = 160,
+                Height = 40,
             };
             speedLayout.Children.Add(_speedLabel);
             _speedSlider = new Slider()
@@ -199,15 +190,13 @@ public class Frontend : IDisposable
                     if (!lp.IsIdentity)
                         _lastDevicePositions[dev.ID] = lp.Translation;
                 }
-
-                CheckDeviceChanged(dev);
             }
             _deviceCache.Sort(static (a, b) => a.ID.CompareTo(b.ID));
 
             // set rows in place when the device count is stable, reset the list when it changed;
             // per-tick garbage is limited to the item strings themselves
             _rows.Clear();
-            _rows.Add("    Space Correction Disabled");
+            _rows.Add("Disable Space Correction");
             foreach (var d in _deviceCache)
                 AppendDeviceRow(d);
 
@@ -232,30 +221,18 @@ public class Frontend : IDisposable
                     foundActive = true;
             }
 
-            var calibrationState = State.Current.CalibrateUpTo;
-
             // calibration logic
-            bool waitingOnStepUp = false;
-            if (calibrationState > 0)
+            var calibrate = State.Current.Calibrate;
+            if (calibrate)
             {
                 var collected = Calibration.CollectedSampleCount;
-                if (collected >= Calibration.MaxSamples * calibrationState)
+                if (collected >= Calibration.MaxSamples)
                 {
-                    if (playedSoundForStage != calibrationState)
-                    {
-                        Application.PlaySound(MessageBoxIcon.Information);
-                        playedSoundForStage = calibrationState;
-                    }
-
-                    if (calibrationState < Calibration.CalibrationSteps)
-                        waitingOnStepUp = true;
-                    else
-                        State.Current.FinishCalibration();
+                    Application.PlaySound(MessageBoxIcon.Information);
+                    State.Current.FinishCalibration();
                 }
             }
-            _calibrateButton.Disabled = State.Current.ActiveTargetIndex == 0 || (!waitingOnStepUp && calibrationState > 0);
-            _calibrateButton.Text = waitingOnStepUp ? "Continue" : "Calibrate";
-
+            _calibrateButton.Disabled = State.Current.ActiveTargetIndex == 0 || calibrate;
             var hasCalibration = !State.Current.ActiveOffset.Value.IsIdentity;
             _resetCalibrationButton.Disabled = !hasCalibration;
 
@@ -269,33 +246,29 @@ public class Frontend : IDisposable
             {
                 _helpText.Text = "Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍";
             }
-            else if (calibrationState > 0)
+            else if (calibrate)
             {
-                if (waitingOnStepUp)
-                {
-                    _helpText.Text = $"Calibration step {calibrationState} of {Calibration.CalibrationSteps} complete. Move somewhere else in your playspace and press 'Continue'! ⏭️";
-                }
-                else
-                {
-                    var samples = Calibration.CollectedSampleCount;
-                    var progress = (samples - (Calibration.MaxSamples * (calibrationState - 1)))/(float)(Calibration.MaxSamples * calibrationState);
-                    _helpText.Text = $"Calibration step {calibrationState} of {Calibration.CalibrationSteps}: {progress:P2}\nGently move and rotate your head! 🔃";
-                }
+                var samples = Calibration.CollectedSampleCount;
+                var progress = samples / (float)Calibration.MaxSamples;
+                _helpText.Text = $"Calibration progress: {progress:P2}\nGently move and rotate your head along all axis, slowly move about your playspace, stop periodically! 🔃";
             }
             else if (State.Current.ActiveTargetIndex != 0)
             {
                 if (!hasCalibration)
-                {
                     _helpText.Text = "No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️";
-                }
                 else
-                {
-                    _helpText.Text = $"Calibration found for active device. Everything should be working! ✔️\nBlend factor: {State.Current.LastCorrectionBlend:P2}";
-                }
+                    _helpText.Text = $"Calibration found for active device. Everything should be working! ✔️";
             }
             else
             {
                 _helpText.Text = "Unknown state? ⚠️";
+            }
+
+            // write speed to disk after a delay
+            if (_lastSpeedChange.HasValue && (DateTimeOffset.UtcNow - _lastSpeedChange.Value).TotalSeconds > 5)
+            {
+                State.Current.WriteToDisk();
+                _lastSpeedChange = null;
             }
         }
         catch (Exception ex)
@@ -355,39 +328,16 @@ public class Frontend : IDisposable
         return -1;
     }
 
-    // TODO: Maybe remove? Doesn't seem necessary. But cheap.
-    static bool CheckDeviceChanged(Device dev)
-    {
-        var id = dev.ID;
-        var ct = DeviceProperties.GetContainer(id);
-        var deviceClass = DeviceProperties.GetInt(ct, id, OpenVr.PropDeviceClass);
-        var serialNumber = DeviceProperties.GetString(ct, id, OpenVr.PropSerialNumber);
-        var trackingSpace = DeviceProperties.GetString(ct, id, OpenVr.PropTrackingSystemName);
-        if (deviceClass != dev.DeviceClass ||
-            serialNumber != dev.SerialNumber ||
-            trackingSpace != dev.TrackingSpace)
-        {
-            Utilities.Log("Device changed: " + id);
-            State.Current.Devices.TryRemove(id, out _);
-            return true;
-        }
-        return false;
-    }
-
     static string ClassToString(int deviceClass) => deviceClass switch
     {
-        OpenVr.DeviceClassController => "Ctrller",
+        OpenVr.DeviceClassController => "Ctrl",
         OpenVr.DeviceClassGenericTracker => "Tracker",
         _ => deviceClass.ToString(),
     };
 
     void Calibrate()
     {
-        var state = State.Current.CalibrateUpTo;
-        if (state == 0)
-            State.Current.BeginCalibration();
-        else
-            State.Current.StepUpCalibration();
+        State.Current.BeginCalibration();
     }
 
     void ResetCalibration()
@@ -405,8 +355,8 @@ public class Frontend : IDisposable
     void SetSpeed(int speed)
     {
         State.Current.Speed = speed;
-        State.Current.WriteToDisk();
-        _speedLabel.Text = $"Speed ({State.Current.SpeedFactor:P0}):";
+        _lastSpeedChange = DateTimeOffset.UtcNow;
+        _speedLabel.Text = $"Correction Speed ({State.Current.SpeedFactor:P0}):";
     }
 
     public void Dispose()

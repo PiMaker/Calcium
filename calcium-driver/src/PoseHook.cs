@@ -68,7 +68,7 @@ public static class PoseHook
                                   pose.poseIsValid != 0 &&
                                   pose.result == OpenVr.TrackingResultRunningOk &&
                                   !selfDevice.Outliers.IsOutlierAndStore(poseMatrix,
-                                      state.CalibrateUpTo > 0 ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting * State.Current.SpeedFactor);
+                                      state.Calibrate ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting * State.Current.SpeedFactor);
 
                     if (isValid)
                     {
@@ -98,7 +98,7 @@ public static class PoseHook
                     }
                 }
 
-                if (state.CalibrateUpTo == 0 && Calibration.Active)
+                if (!state.Calibrate && Calibration.Active)
                 {
                     lock (Calibration.CalibrationLock)
                     {
@@ -135,12 +135,12 @@ public static class PoseHook
 
         // calibration logic, if requested
         var resetFilter = false;
-        var calibrate = state.CalibrateUpTo;
-        if (calibrate > 0)
+        var calibrate = state.Calibrate;
+        if (calibrate)
         {
             lock (Calibration.CalibrationLock)
             {
-                if (Calibration.Update(activeInverse, hmdPose, out var result, calibrate))
+                if (Calibration.Update(activeInverse, hmdPose, out var result))
                 {
                     state.ActiveOffset.Set(result);
                     resetFilter = true;

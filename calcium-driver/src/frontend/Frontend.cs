@@ -24,6 +24,7 @@ public class Frontend : IDisposable
     Slider _speedSlider;
     Label _versionLabel;
 
+    readonly TextBuffer _textBuffer = new(4095);
     readonly List<Device> _deviceCache = new();
     readonly List<string> _rows = new();
     readonly StringBuilder _row = new();
@@ -123,7 +124,7 @@ public class Frontend : IDisposable
 
             _versionLabel = new Label("v" + CalciumVersion.Version, centerVertically: true)
             {
-                Width = 60,
+                Width = 105,
                 Height = 40,
                 Foreground = Color.FromArgb(160, 160, 160),
                 Background = BackgroundColor,
@@ -241,28 +242,34 @@ public class Frontend : IDisposable
             var activeSerial = State.Current.ActiveSerialNumber;
             if (!foundActive && !string.IsNullOrEmpty(activeSerial))
             {
-                _helpText.Text = $"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛";
+                _helpText.SetTextNoAlloc(_textBuffer.Set(
+                    $"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛"));
             }
             else if (State.Current.ActiveTargetIndex == 0)
             {
-                _helpText.Text = "Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍";
+                _helpText.SetTextNoAlloc(_textBuffer.Set(
+                    $"Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍"));
             }
             else if (calibrate)
             {
                 var samples = Calibration.CollectedSampleCount;
-                var progress = samples / (float)Calibration.MaxSamples;
-                _helpText.Text = $"Calibration progress: {progress:P2}\nGently move and rotate your head along all axis, slowly move about your playspace, stop periodically! 🔃";
+                var progress = Math.Round(samples / (float)Calibration.MaxSamples * 100f, 1);
+                _helpText.SetTextNoAlloc(_textBuffer.Set(
+                    $"Calibration progress: {progress}%\nGently move and rotate your head along all axis, slowly move about your playspace, stop periodically! 🔃"));
             }
             else if (State.Current.ActiveTargetIndex != 0)
             {
                 if (!hasCalibration)
-                    _helpText.Text = "No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️";
+                    _helpText.SetTextNoAlloc(_textBuffer.Set(
+                        $"No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️"));
                 else
-                    _helpText.Text = "Calibration found for active device. Everything should be working! ✔️";
+                    _helpText.SetTextNoAlloc(_textBuffer.Set(
+                        $"Calibration found for active device. Everything should be working! ✔️"));
             }
             else
             {
-                _helpText.Text = "Unknown state? ⚠️";
+                _helpText.SetTextNoAlloc(_textBuffer.Set(
+                    $"Unknown state? ⚠️"));
             }
 
             // write speed to disk after a delay
@@ -273,7 +280,7 @@ public class Frontend : IDisposable
             }
 
             // debug
-            _versionLabel.Text = GC.GetTotalAllocatedBytes(true).ToString();
+            _versionLabel.SetTextNoAlloc(_textBuffer.Set($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: false)}B"));
         }
         catch (Exception ex)
         {
@@ -346,8 +353,13 @@ public class Frontend : IDisposable
 
     void ResetCalibration()
     {
-        State.Current.ActiveOffset.Set(Matrix4x4.Identity);
-        _resetCalibrationButton.Disabled = true;
+        if (_window.MessageBox("Reset Calibration", "Are you sure you want to delete the current calibration data?", _window.Icon, MessageBoxIcon.Warning))
+        {
+            State.Current.ActiveOffset.Set(Matrix4x4.Identity);
+            State.Current.ActiveSerialNumber = string.Empty;
+            State.Current.WriteToDisk();
+            _resetCalibrationButton.Disabled = true;
+        }
     }
 
     void SetMinimizeOnStartup(bool minimize)
@@ -360,7 +372,7 @@ public class Frontend : IDisposable
     {
         State.Current.Speed = speed;
         _lastSpeedChange = DateTimeOffset.UtcNow;
-        _speedLabel.Text = $"Correction Speed ({State.Current.SpeedFactor:P0}):";
+        _speedLabel.SetTextNoAlloc(_textBuffer.Set($"Correction Speed ({Math.Round(State.Current.SpeedFactor * 100f, 0)}%):"));
     }
 
     public void Dispose()

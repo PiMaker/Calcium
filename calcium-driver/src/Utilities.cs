@@ -152,3 +152,33 @@ public class PooledAtomicStrongBox<T>
         Interlocked.Exchange(ref _activeBox, newBox);
     }
 }
+
+// A ring buffer queue that overwrites it's own tail but can be indexed.
+public class ContinuousRingBuffer<T>(int capacity)
+{
+    private readonly T[] _buffer = new T[capacity];
+    private int _head = 0;
+    private int _count = 0;
+
+    public int Count => _count;
+    public bool Full => _count == _buffer.Length;
+
+    public void Enqueue(T item)
+    {
+        _buffer[_head] = item;
+        _head = (_head + 1) % _buffer.Length;
+        if (_count < _buffer.Length)
+            _count++;
+    }
+
+    public T this[int index]
+    {
+        get
+        {
+            if (index < 0 || index >= _count)
+                throw new IndexOutOfRangeException();
+            int actualIndex = (_head - _count + index + _buffer.Length) % _buffer.Length;
+            return _buffer[actualIndex];
+        }
+    }
+}

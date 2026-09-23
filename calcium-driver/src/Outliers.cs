@@ -12,7 +12,7 @@ public class Outliers
     const float TranslationSlack = 0.01f; // tracker noise and callback jitter
     const float RotationSlack = 0.05f;
 
-    readonly Queue<(Matrix4x4 Matrix, long Time)> _samples = new();
+    readonly ContinuousRingBuffer<(Matrix4x4 Matrix, long Time)> _samples = new(HistoryLength);
     int _recoveryCounter = 0;
 
     public bool IsOutlierAndStore(Matrix4x4 sample, float maxRotationSpeed /* radians per second */)
@@ -20,14 +20,14 @@ public class Outliers
         var now = Stopwatch.GetTimestamp();
         if (_samples.Count == 0)
         {
-            Store(sample, now);
+            _samples.Enqueue((sample, now));
             return true;
         }
 
-        var previous = _samples.Last();
-        var seconds = (float)(now - previous.Time) / Stopwatch.Frequency;
-        var translation = Vector3.Distance(sample.Translation, previous.Matrix.Translation);
-        var previousRotation = Quaternion.CreateFromRotationMatrix(previous.Matrix);
+        var (prevMatrix, prevTime) = _samples[^1];
+        var seconds = (float)(now - prevTime) / Stopwatch.Frequency;
+        var translation = Vector3.Distance(sample.Translation, prevMatrix.Translation);
+        var previousRotation = Quaternion.CreateFromRotationMatrix(prevMatrix);
         var rotation = Quaternion.CreateFromRotationMatrix(sample);
         var dot = Math.Clamp(MathF.Abs(Quaternion.Dot(previousRotation, rotation)), 0f, 1f);
         var angle = 2f * MathF.Acos(dot);
@@ -36,7 +36,8 @@ public class Outliers
             (seconds > 0f && (translation > TranslationSlack + MaxTranslationSpeed * seconds ||
                               angle > RotationSlack + maxRotationSpeed * seconds ||
                               translation < MinTranslation));
-        Store(sample, now);
+
+        _samples.Enqueue((sample, now));
         outlier |= IsSustainedDrift(now);
 
         if (outlier)
@@ -52,28 +53,23 @@ public class Outliers
         return outlier;
     }
 
-    void Store(Matrix4x4 sample, long time)
-    {
-        _samples.Enqueue((sample, time));
-        if (_samples.Count > HistoryLength) _samples.Dequeue();
-    }
-
     // A Lighthouse-loss IMU drift is typically a fast, nearly straight translation
     // over many callbacks. The path-length ratio rejects it without averaging poses.
     bool IsSustainedDrift(long now)
     {
         if (_samples.Count < HistoryLength) return false;
-        var first = _samples.Peek();
-        var seconds = (float)(now - first.Time) / Stopwatch.Frequency;
+        var (firstMatrix, firstTime) = _samples[0];
+        var seconds = (float)(now - firstTime) / Stopwatch.Frequency;
 
-        var previous = first.Matrix.Translation;
+        var previous = firstMatrix.Translation;
         var pathLength = 0f;
-        foreach (var sample in _samples)
+        for (int i = 1; i < _samples.Count; i++)
         {
-            pathLength += Vector3.Distance(previous, sample.Matrix.Translation);
-            previous = sample.Matrix.Translation;
+            var (sampleMatrix, _) = _samples[i];
+            pathLength += Vector3.Distance(previous, sampleMatrix.Translation);
+            previous = sampleMatrix.Translation;
         }
-        var displacement = Vector3.Distance(first.Matrix.Translation, previous);
+        var displacement = Vector3.Distance(firstMatrix.Translation, previous);
         return displacement / seconds > SustainedTranslationSpeed &&
                pathLength > 0f && displacement / pathLength > MinimumStraightness;
     }

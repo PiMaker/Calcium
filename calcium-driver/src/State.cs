@@ -5,7 +5,7 @@ public class State
 {
     public static State Current { get; } = new State();
 
-    public string ActiveSerialNumber = "";
+    public volatile string ActiveSerialNumber = "";
     public volatile uint ActiveTargetIndex = 0;
     public volatile bool Calibrate = false;
 
@@ -36,7 +36,7 @@ public class State
     {
         var offset = ActiveOffset.Value;
         var path = Path.Combine(Utilities.GetDataPath(), "settings.ini");
-        var ini = $"TargetSerialNumber = {Volatile.Read(ref ActiveSerialNumber)}{Environment.NewLine}ActiveOffset = {Utilities.SerializeMatrix(offset)}{Environment.NewLine}MinimizeOnStartup = {MinimizeOnStartup}{Environment.NewLine}Speed = {Speed}";
+        var ini = $"TargetSerialNumber = {ActiveSerialNumber}{Environment.NewLine}ActiveOffset = {Utilities.SerializeMatrix(offset)}{Environment.NewLine}MinimizeOnStartup = {MinimizeOnStartup}{Environment.NewLine}Speed = {Speed}";
         File.WriteAllText(path, ini);
         Utilities.Log($"Wrote settings to disk at {path}");
     }

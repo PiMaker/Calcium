@@ -24,7 +24,7 @@ public static class PoseHook
                     selfDevice = state.Devices[deviceIndex];
 
                     // activate after disk restore on launch
-                    if (selfDevice.SerialNumber == Volatile.Read(ref state.ActiveSerialNumber))
+                    if (selfDevice.SerialNumber == state.ActiveSerialNumber)
                         state.ActiveTargetIndex = deviceIndex;
                 }
 
@@ -47,7 +47,7 @@ public static class PoseHook
                 var correctedTrackingSpace = state.Devices.TryGetValue(activeTargetIndex, out var device) ? device.TrackingSpace : null;
 
                 var selfSerialNumber = selfDevice.SerialNumber;
-                if (isActiveTracker && Volatile.Read(ref state.ActiveSerialNumber) != selfSerialNumber)
+                if (isActiveTracker && state.ActiveSerialNumber != selfSerialNumber)
                 {
                     Interlocked.Exchange(ref state.ActiveSerialNumber, selfSerialNumber);
                     state.WriteToDisk();

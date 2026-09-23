@@ -238,7 +238,7 @@ public class Frontend : IDisposable
             _resetCalibrationButton.Disabled = !hasCalibration;
 
             // set help text based on current app status
-            var activeSerial = Volatile.Read(ref State.Current.ActiveSerialNumber);
+            var activeSerial = State.Current.ActiveSerialNumber;
             if (!foundActive && !string.IsNullOrEmpty(activeSerial))
             {
                 _helpText.Text = $"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛";

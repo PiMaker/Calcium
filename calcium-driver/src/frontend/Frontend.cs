@@ -124,7 +124,7 @@ public class Frontend : IDisposable
 
             _versionLabel = new Label("v" + CalciumVersion.Version, centerVertically: true)
             {
-                Width = 105,
+                Width = 100,
                 Height = 40,
                 Foreground = Color.FromArgb(160, 160, 160),
                 Background = BackgroundColor,
@@ -280,7 +280,7 @@ public class Frontend : IDisposable
             }
 
             // debug
-            _versionLabel.SetTextNoAlloc(_textBuffer.Set($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: false)}B"));
+            _versionLabel.SetTextNoAlloc(_textBuffer.Set($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: false)}"));
         }
         catch (Exception ex)
         {

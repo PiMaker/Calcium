@@ -11,7 +11,7 @@ if (Get-Process vrserver -ErrorAction SilentlyContinue) {
 # driver: native AOT single dll
 dotnet publish "$root\calcium-driver\calcium-driver.csproj" -c Release -r win-x64
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish (driver) failed with exit code $LASTEXITCODE" }
-$driverPublish = Join-Path $root "calcium-driver\bin\Release\net10.0\win-x64\publish"
+$driverPublish = Join-Path $root "calcium-driver\bin\Release\net11.0\win-x64\publish"
 if (-not (Test-Path (Join-Path $driverPublish "driver_$driverName.dll"))) {
     throw "Driver publish output not found: $driverPublish"
 }

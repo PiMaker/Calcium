@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.x
+          dotnet-version: 11.x
 
       - name: Compute next version
         id: ver
@@ -52,10 +52,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: calcium-installer
-          path: calcium-installer/bin/Release/net10.0-windows/win-x64/publish/calcium-installer.exe
+          path: calcium-installer/bin/Release/net11.0-windows/win-x64/publish/calcium-installer.exe
 
       - name: Create release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v${{ steps.ver.outputs.n }}" "calcium-installer/bin/Release/net10.0-windows/win-x64/publish/calcium-installer.exe" --title "Version ${{ steps.ver.outputs.n }}" --generate-notes
+        run: gh release create "v${{ steps.ver.outputs.n }}" "calcium-installer/bin/Release/net11.0-windows/win-x64/publish/calcium-installer.exe" --title "Version ${{ steps.ver.outputs.n }}" --generate-notes

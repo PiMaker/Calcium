@@ -6,7 +6,7 @@ public static class PoseHook
     const float MaxRotationSpeedCalibrating = 4f; // radians per second
 
     static readonly CorrectionFilter _filter = new();
-
+    static readonly Calibration _calibration = new();
     static readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it
 
     public static unsafe void PoseDetour(IntPtr self, uint deviceIndex, IntPtr posePtr, uint structSize)
@@ -20,10 +20,10 @@ public static class PoseHook
                 if (!state.Devices.TryGetValue(deviceIndex, out var selfDevice))
                 {
                     if (pose.deviceIsConnected == 0) return;
-                    InsertDevice(state, deviceIndex);
+                    state.InsertDevice(deviceIndex);
                     selfDevice = state.Devices[deviceIndex];
 
-                    // activate after disk restore on launch
+                    // activate after disk restore on launch if serial matches
                     if (selfDevice.SerialNumber == state.ActiveSerialNumber)
                         state.ActiveTargetIndex = deviceIndex;
                 }
@@ -36,8 +36,7 @@ public static class PoseHook
 
                 if (pose.deviceIsConnected == 0)
                 {
-                    Utilities.Log("Device disconnected: " + deviceIndex);
-                    state.Devices.TryRemove(deviceIndex, out _);
+                    state.RemoveDevice(deviceIndex);
                     return;
                 }
 
@@ -46,17 +45,10 @@ public static class PoseHook
                 var isActiveTracker = deviceIndex != 0 /* HMD */ && deviceIndex == activeTargetIndex;
                 var correctedTrackingSpace = state.Devices.TryGetValue(activeTargetIndex, out var device) ? device.TrackingSpace : null;
 
-                var selfSerialNumber = selfDevice.SerialNumber;
-                if (isActiveTracker && state.ActiveSerialNumber != selfSerialNumber)
-                {
-                    Interlocked.Exchange(ref state.ActiveSerialNumber, selfSerialNumber);
-                    state.WriteToDisk();
-                }
-
                 if (selfDevice.DeviceClass == OpenVr.DeviceClassTrackingReference)
                 {
                     // basestations should still be shifted, but aren't needed for calibration
-                    //selfDevice.LastPose.Set(poseMatrix);
+                    selfDevice.LastPose.Set(poseMatrix);
                     if (activeTargetIndex != 0 && selfDevice.TrackingSpace == correctedTrackingSpace)
                         Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
                     return;
@@ -131,22 +123,21 @@ public static class PoseHook
         var resetFilter = false;
         if (state.Calibrating)
         {
-            if (Calibration.Update(activeInverse, hmdPose, out var result))
+            if (_calibration.Update(activeInverse, hmdPose, out var result))
             {
                 state.ActiveOffset.Set(result);
                 resetFilter = true;
             }
 
-            if (Calibration.CollectedSampleCount >= Calibration.MaxSamples)
+            if (_calibration.CollectedSampleCount >= Calibration.MaxSamples)
             {
-                var collected = Calibration.CollectedSampleCount;
+                var collected = _calibration.CollectedSampleCount;
+                state.ReportCalibrationProgress((float)collected / Calibration.MaxSamples);
                 if (collected >= Calibration.MaxSamples)
-                {
-                    State.Current.FinishCalibration();
-                }
+                    State.Current.Calibrating = false;
 
                 Utilities.Log("Calibration complete!");
-                Calibration.Reset();
+                _calibration.Reset();
                 state.WriteToDisk();
             }
         }
@@ -162,15 +153,5 @@ public static class PoseHook
         var correction = activeInverse * state.ActiveOffset.Value * hmdPose;
         var newCorrection = _filter.ApplyFilter(state.ActiveCorrection.Value, correction, resetFilter, state.SpeedFactor);
         state.ActiveCorrection.Set(newCorrection);
-    }
-
-    static void InsertDevice(State state, uint id)
-    {
-        var ct = DeviceProperties.GetContainer(id);
-        var trackingSpace = DeviceProperties.GetString(ct, id, OpenVr.PropTrackingSystemName);
-        var serialNumber = DeviceProperties.GetString(ct, id, OpenVr.PropSerialNumber);
-        var deviceClass = DeviceProperties.GetInt(ct, id, OpenVr.PropDeviceClass);
-        state.Devices.TryAdd(id, new Device(id, trackingSpace, serialNumber, deviceClass));
-        Utilities.Log($"Added device: ID={id}, TrackingSpace={trackingSpace}, SerialNumber={serialNumber}, DeviceClass={deviceClass}");
     }
 }

@@ -6,25 +6,26 @@ using System.Collections.Concurrent;
 // somewhat traceable and understandable. None of this is particularly new math, just
 // applying existing techniques to our specific issue and writing it out in C#.
 
-public static class Calibration
+public class Calibration
 {
     const float MinimumRotation = 0.0225f; // Ignore pairs with very small motion
 
-    static Matrix4x4 _targetInverse;
-    static Matrix4x4 _prevHmdInverse;
+    Matrix4x4 _targetInverse;
+    Matrix4x4 _prevHmdInverse;
 
     public const int MaxSamples = 512;
-    public static int CollectedSampleCount => Pairs.Count;
+    public int CollectedSampleCount => Pairs.Count;
 
-    static readonly ConcurrentQueue<(Matrix4x4 A, Matrix4x4 B)> Pairs = new();
-    static readonly double[,] RotationNormal = new double[4, 4];
+    readonly ConcurrentQueue<(Matrix4x4 A, Matrix4x4 B)> Pairs = new();
+    readonly double[,] RotationNormal = new double[4, 4];
 
     const int RhsSize = 4;
-    static readonly double[,] _rhsScratch = new double[RhsSize, RhsSize + 1];
-    static readonly double[,] _scratch4x4 = new double[4, 4];
-    static readonly double[,] _scratch3x3 = new double[3, 3];
+    readonly double[,] _rhsScratch = new double[RhsSize, RhsSize + 1];
+    readonly double[,] _scratch4x4 = new double[4, 4];
+    readonly double[,] _scratch3x3 = new double[3, 3];
 
-    internal static void Reset()
+    public Calibration() => Reset();
+    public void Reset()
     {
         _targetInverse = Matrix4x4.Identity;
         _prevHmdInverse = Matrix4x4.Identity;
@@ -74,7 +75,7 @@ public static class Calibration
     //    units: scale * (a * Rm).
     //    Each pair gives 3 equations in the 4 unknowns (t, scale), stacked
     //    into normal equations and solved as a linear system.
-    internal static bool Update(Matrix4x4 targetInverse, Matrix4x4 hmd, out Matrix4x4 result)
+    public bool Update(Matrix4x4 targetInverse, Matrix4x4 hmd, out Matrix4x4 result)
     {
         result = Matrix4x4.Identity;
 
@@ -127,7 +128,7 @@ public static class Calibration
     // conventional quaternion multiplication. So A * M = M * B reads
     // qM * qA = qB * qM, or qM * qA - qB * qM = 0: a homogeneous linear
     // equation C * qM = 0 in the 4 components of qM.
-    static void AddRotationConstraint(Matrix4x4 a, Matrix4x4 b)
+    void AddRotationConstraint(Matrix4x4 a, Matrix4x4 b)
     {
         var qa = Quaternion.CreateFromRotationMatrix(a);
         var qb = Quaternion.CreateFromRotationMatrix(b);
@@ -171,7 +172,7 @@ public static class Calibration
     // typically because every sample rotated about essentially one axis,
     // leaving the mount's twist around that axis unconstrained. Motions
     // around at least two independent axes are needed.
-    static bool SolveRotation(out Quaternion rotation)
+    bool SolveRotation(out Quaternion rotation)
     {
         var a = (double[,])RotationNormal.Clone();
         var vectors = _scratch4x4; Array.Clear(vectors); // new double[4, 4]
@@ -256,7 +257,7 @@ public static class Calibration
     // builds the normal equations of a plain linear least-squares problem.
     // x[0..2] is t, x[3] is scale; a non-positive scale would mirror or
     // collapse target space, which is nonsense, so reject it.
-    static bool SolveSimilarity(Quaternion rotation, out Vector3 translation, out float scale)
+    bool SolveSimilarity(Quaternion rotation, out Vector3 translation, out float scale)
     {
         var rm = Matrix4x4.CreateFromQuaternion(rotation);
         var c = _scratch3x3; // new double[3, 3]
@@ -313,7 +314,7 @@ public static class Calibration
     // dividing by tiny numbers, which would amplify rounding error. A
     // negligible pivot means the accumulated equations do not determine the
     // unknowns (too few or too similar samples); reject.
-    static bool Solve(double[,] normal, Span<double> rhs, ref Span<double> x)
+    bool Solve(double[,] normal, Span<double> rhs, ref Span<double> x)
     {
         var n = rhs.Length;
         var a = _rhsScratch; Array.Clear(a); // new double[RhsSize, RhsSize + 1]

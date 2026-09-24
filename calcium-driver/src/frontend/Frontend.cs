@@ -1,6 +1,4 @@
 using System.Drawing;
-using System.Numerics;
-using System.Text;
 using Win32.SimpleGui;
 
 public class Frontend : IDisposable
@@ -23,12 +21,10 @@ public class Frontend : IDisposable
     Slider _speedSlider;
     Label _versionLabel;
 
-    readonly TextBuffer _textBuffer = new(4095);
+    readonly TextBuffer _rowBuffer = new(512);
     readonly List<Device> _deviceCache = new();
-    readonly List<string> _rows = new();
-    readonly StringBuilder _row = new();
-    readonly Dictionary<uint, Vector3> _lastDevicePositions = new();
     DateTimeOffset? _lastSpeedChange;
+    float _lastCalibrationProgress;
     bool _playDing;
 
     public Frontend()
@@ -75,11 +71,8 @@ public class Frontend : IDisposable
                 Foreground = ForegroundColor,
                 Background = ElementColor,
             };
-            _deviceList.OnSelectedIndexChanged += (_, i) =>
-            {
-                var index = i - 1; // item 0 is the Disabled row
-                State.Current.ActiveTargetIndex = index >= 0 && index < _deviceCache.Count ? _deviceCache[index].ID : 0;
-            };
+            _deviceList.OnSelectedIndexChanged += OnSelectedIndexChanged;
+            _deviceList.Items.Add(new($"Disable Space Correction"));
             layout.Children.Add(_deviceList);
 
             _helpText = new Label
@@ -154,6 +147,7 @@ public class Frontend : IDisposable
             _speedSlider.Value = State.Current.Speed;
 
             State.Current.OnCalibrationComplete += DispatchDing;
+            State.Current.OnCalibrationProgress += ReportCalibrationProgress;
 
             Application.ScheduleTimer(RefreshDevices, 333);
             RefreshDevices();
@@ -189,43 +183,30 @@ public class Frontend : IDisposable
             foreach (var dev in State.Current.Devices.Values)
             {
                 if (dev.DeviceClass is OpenVr.DeviceClassController or OpenVr.DeviceClassGenericTracker)
-                {
                     _deviceCache.Add(dev);
-
-                    var lp = dev.LastPose.Value;
-                    if (!lp.IsIdentity)
-                        _lastDevicePositions[dev.ID] = lp.Translation;
-                }
             }
             _deviceCache.Sort(static (a, b) => a.ID.CompareTo(b.ID));
 
-            // set rows in place when the device count is stable, reset the list when it changed;
-            // per-tick garbage is limited to the item strings themselves
-            _rows.Clear();
-            _rows.Add("Disable Space Correction");
-            foreach (var d in _deviceCache)
-                AppendDeviceRow(d);
-
-            var items = _deviceList.Items;
-            if (items.Count != _rows.Count)
-            {
-                items.Clear();
-                foreach (var row in _rows) items.Add(row);
-            }
-            else
-            {
-                for (var i = 0; i < _rows.Count; i++)
-                    if (items[i] != _rows[i])
-                        items[i] = _rows[i];
-            }
-            _deviceList.SelectedIndex = SelectedIndex();
-
+            var i = 1;
             var foundActive = false;
             foreach (var dev in _deviceCache)
             {
+                _rowBuffer.Clear();
+                BuildDeviceRow(dev, _rowBuffer);
+                
+                if (_deviceList.Items.Count <= i)
+                    _deviceList.Items.Add(_rowBuffer);
+                else if (!_deviceList.Items[i].Equals(_rowBuffer))
+                    _deviceList.Items[i].Set($"{_rowBuffer}");
+
                 if (State.Current.ActiveTargetIndex == dev.ID)
                     foundActive = true;
+
+                i++;
             }
+
+            for (var j = _deviceList.Items.Count - 1; j >= i; j--)
+                _deviceList.Items.Remove(_deviceList.Items[j]);
 
             // calibration logic
             var calibrating = State.Current.Calibrating;
@@ -236,34 +217,26 @@ public class Frontend : IDisposable
             var activeSerial = State.Current.ActiveSerialNumber;
             if (!foundActive && !string.IsNullOrEmpty(activeSerial))
             {
-                _helpText.SetTextNoAlloc(_textBuffer.Set(
-                    $"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛"));
+                _helpText.SetText($"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛");
             }
             else if (State.Current.ActiveTargetIndex == 0)
             {
-                _helpText.SetTextNoAlloc(_textBuffer.Set(
-                    $"Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍"));
+                _helpText.SetText($"Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍");
             }
             else if (calibrating)
             {
-                var samples = Calibration.CollectedSampleCount;
-                var progress = Math.Round(samples / (float)Calibration.MaxSamples * 100f, 1);
-                _helpText.SetTextNoAlloc(_textBuffer.Set(
-                    $"Calibration progress: {progress}%\nGently move and rotate your head along all axis, slowly move about your playspace, stop periodically! 🔃"));
+                _helpText.SetText($"Calibration progress: {_lastCalibrationProgress:P1}\nGently move and rotate your head along all axis, slowly move about your playspace, stop periodically! 🔃");
             }
             else if (State.Current.ActiveTargetIndex != 0)
             {
                 if (!hasCalibration)
-                    _helpText.SetTextNoAlloc(_textBuffer.Set(
-                        $"No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️"));
+                    _helpText.SetText($"No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️");
                 else
-                    _helpText.SetTextNoAlloc(_textBuffer.Set(
-                        $"Calibration found for active device. Everything should be working! ✔️"));
+                    _helpText.SetText($"Calibration found for active device. Everything should be working! ✔️");
             }
             else
             {
-                _helpText.SetTextNoAlloc(_textBuffer.Set(
-                    $"Unknown state? ⚠️"));
+                _helpText.SetText($"Unknown state? ⚠️");
             }
 
             // write speed to disk after a delay
@@ -274,7 +247,7 @@ public class Frontend : IDisposable
             }
 
             // debug
-            _versionLabel.SetTextNoAlloc(_textBuffer.Set($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: false)}"));
+            _versionLabel.SetText($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: false)}");
         }
         catch (Exception ex)
         {
@@ -282,42 +255,42 @@ public class Frontend : IDisposable
         }
     }
 
-    void AppendDeviceRow(Device d)
+    static void BuildDeviceRow(Device d, TextBuffer b)
     {
-        _row.Clear();
-        if (d.ID >= 10) _row.Append(' ').Append(d.ID);
-        else _row.Append("  ").Append(d.ID);
-        _row.Append(' ');
-        AppendField(d.TrackingSpace, 11);
-        _row.Append(' ');
-        AppendField(d.SerialNumber, 19);
-        _row.Append(' ');
-        AppendField(ClassToString(d.DeviceClass), 7);
-        _row.Append(' ');
-        AppendLastPosition(d);
-        _rows.Add(_row.ToString());
+        if (d.ID >= 10) b.Append($" ").Append($"{d.ID}");
+        else b.Append($"  ").Append($"{d.ID}");
+        b.Append($" ");
+        AppendField(b, d.TrackingSpace, 11);
+        b.Append($" ");
+        AppendField(b, d.SerialNumber, 19);
+        b.Append($" ");
+        AppendField(b, ClassToString(d.DeviceClass), 7);
+        b.Append($" ");
+        AppendLastPosition(b, d);
 
-        void AppendField(string text, int width)
+        static void AppendField(TextBuffer b, string text, int width)
         {
-            _row.Append(text);
+            b.Append($"{text}");
             for (var pad = width - text.Length; pad > 0; pad--)
-                _row.Append(' ');
+                b.Append($" ");
         }
 
-        void AppendLastPosition(Device d)
+        static void AppendLastPosition(TextBuffer b, Device d)
         {
-            if (_lastDevicePositions.TryGetValue(d.ID, out var pos))
+            var v = d.LastPose.Value;
+            if (v.IsIdentity)
             {
-                _row.Append(FloatToString(pos.X)).Append(',');
-                _row.Append(FloatToString(pos.Y)).Append(',');
-                _row.Append(FloatToString(pos.Z));
-            }
-            else
-            {
-                _row.Append(" N/A");
+                b.Append($" N/A");
+                return;
             }
 
-            string FloatToString(float value) => value < 0 ? value.ToString("F1") : " " + value.ToString("F1");
+            var pos = v.Translation;
+            if (pos.X < 0) b.Append($"{pos.X:F1}");
+            else b.Append($" {pos.X:F1}");
+            if (pos.Y < 0) b.Append($"{pos.Y:F1}");
+            else b.Append($" {pos.Y:F1}");
+            if (pos.Z < 0) b.Append($"{pos.Z:F1}");
+            else b.Append($" {pos.Z:F1}");
         }
 
         static string ClassToString(int deviceClass) => deviceClass switch
@@ -328,38 +301,39 @@ public class Frontend : IDisposable
         };
     }
 
-    int SelectedIndex()
+    private void OnSelectedIndexChanged(ListBox _, int index)
     {
-        var target = State.Current.ActiveTargetIndex;
-        if (target == 0) return 0;
-        for (var i = 0; i < _deviceCache.Count; i++)
+        if (index == 0)
         {
-            if (_deviceCache[i].ID == target)
-                return i + 1;
+            State.Current.ActiveTargetIndex = 0; // disabled
+            return;
         }
-        return -1;
+
+        if (--index < 0 || index >= _deviceCache.Count) return;
+        State.Current.ActiveTargetIndex = _deviceCache[index].ID;
     }
 
-    void SetSpeed(int speed)
-    {
-        State.Current.Speed = speed;
-        _lastSpeedChange = DateTimeOffset.UtcNow;
-        _speedLabel.SetTextNoAlloc(_textBuffer.Set($"Correction Speed ({Math.Round(State.Current.SpeedFactor * 100f, 0)}%):"));
-    }
-
+    void ReportCalibrationProgress(float progress) => _lastCalibrationProgress = progress;
     void DispatchDing() => _playDing = true;
 
-    static void Calibrate() => State.Current.BeginCalibration();
-
+    static void Calibrate() => State.Current.Calibrating = true;
     static void SetMinimizeOnStartup(bool minimize)
     {
         State.Current.MinimizeOnStartup = minimize;
         State.Current.WriteToDisk();
     }
+    void SetSpeed(int speed)
+    {
+        State.Current.Speed = speed;
+        _lastSpeedChange = DateTimeOffset.UtcNow;
+        _speedLabel.SetText($"Correction Speed ({State.Current.SpeedFactor:P0}):");
+    }
 
     public void Dispose()
     {
         State.Current.OnCalibrationComplete -= DispatchDing;
+        State.Current.OnCalibrationProgress -= ReportCalibrationProgress;
+
         _windowCreated.Wait();
         _closeConfirmed = true; // driver unload: close without confirmation
         if (_window is Window window)

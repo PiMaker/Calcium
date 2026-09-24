@@ -51,14 +51,12 @@ public class Frontend : IDisposable
             {
                 CanMaximize = false,
                 CanResize = false,
+                Background = BackgroundColor,
             };
             window.OnCloseRequest += () =>
                 _closeConfirmed || window.MessageBox("Close Calcium",
                     "Closing this window stops tracking correction until you restart SteamVR.",
                     icon, MessageBoxIcon.Question);
-
-            var background = new Panel(0, 0, window.Width, window.Height - 50, BackgroundColor);
-            window.Children.Add(background);
 
             var layout = new VerticalLayout { Width = BaseLayout.Fill, Height = BaseLayout.Fill, Margin = new Margin(8, 8) };
             window.Children.Add(layout);
@@ -111,12 +109,13 @@ public class Frontend : IDisposable
             _minimizeOnStartup.Checked = State.Current.MinimizeOnStartup;
             _minimizeOnStartup.OnCheckedChanged += (_, on) => SetMinimizeOnStartup(on);
 
-            _versionLabel = new Label("v" + CalciumVersion.Version, centerVertically: true)
+            _versionLabel = new Label("v" + CalciumVersion.Version, Alignment.Right, centerVertically: true)
             {
-                Width = 100,
+                Width = BaseLayout.Fill,
                 Height = 40,
                 Foreground = Color.FromArgb(160, 160, 160),
                 Background = BackgroundColor,
+                Margin = new Margin(horizontal: 8),
             };
             buttons.Children.Add(_versionLabel);
 
@@ -125,6 +124,8 @@ public class Frontend : IDisposable
             {
                 Width = 180,
                 Height = 40,
+                Foreground = ForegroundColor,
+                Background = BackgroundColor,
             };
             speedLayout.Children.Add(_speedLabel);
             _speedSlider = new Slider()
@@ -138,7 +139,6 @@ public class Frontend : IDisposable
             layout.Children.Add(speedLayout);
 
             window.Arrange(); // run layout pass once
-            background.SendToBack();
             _window = window;
             _windowCreated.Set();
 
@@ -247,7 +247,7 @@ public class Frontend : IDisposable
             }
 
             // debug
-            _versionLabel.SetText($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: false)}");
+            _versionLabel.SetText($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: true)} B");
         }
         catch (Exception ex)
         {

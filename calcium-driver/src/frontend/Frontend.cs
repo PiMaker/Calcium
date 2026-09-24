@@ -108,6 +108,7 @@ public class Frontend : IDisposable
             buttons.Children.Add(minimizeLabel);
             _minimizeOnStartup.Checked = State.Current.MinimizeOnStartup;
             _minimizeOnStartup.OnCheckedChanged += (_, on) => SetMinimizeOnStartup(on);
+            minimizeLabel.OnClick += _ => { _minimizeOnStartup.Checked = !_minimizeOnStartup.Checked; SetMinimizeOnStartup(_minimizeOnStartup.Checked); };
 
             _versionLabel = new Label("v" + CalciumVersion.Version, Alignment.Right, centerVertically: true)
             {
@@ -240,7 +241,7 @@ public class Frontend : IDisposable
             }
 
             // write speed to disk after a delay
-            if (_lastSpeedChange.HasValue && (DateTimeOffset.UtcNow - _lastSpeedChange.Value).TotalSeconds > 5)
+            if (_lastSpeedChange.HasValue && (DateTimeOffset.UtcNow - _lastSpeedChange.Value).TotalSeconds > 3)
             {
                 State.Current.WriteToDisk();
                 _lastSpeedChange = null;

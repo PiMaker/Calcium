@@ -3,7 +3,7 @@ using System.Numerics;
 public static class PoseHook
 {
     const float MaxRotationSpeedCorrecting = 0.75f; // radians per second
-    const float MaxRotationSpeedCalibrating = 4f; // radians per second
+    const float MaxRotationSpeedCalibrating = 1.5f; // radians per second
 
     static readonly CorrectionFilter _filter = new();
     static readonly Calibration _calibration = new();
@@ -123,20 +123,37 @@ public static class PoseHook
         var resetFilter = false;
         if (state.Calibrating)
         {
+            // update actual calibration with new pose data
             if (_calibration.Update(activeInverse, hmdPose, out var result))
             {
                 state.ActiveOffset.Set(result);
                 resetFilter = true;
             }
 
-            if (_calibration.CollectedSampleCount >= Calibration.MaxSamples)
-            {
-                var collected = _calibration.CollectedSampleCount;
-                state.ReportCalibrationProgress((float)collected / Calibration.MaxSamples);
-                if (collected >= Calibration.MaxSamples)
-                    State.Current.Calibrating = false;
+            // report progress to UI
+            var collected = _calibration.CollectedSampleCount;
+            state.ReportCalibrationProgress((float)collected / Calibration.MaxSamples);
 
-                Utilities.Log("Calibration complete!");
+            // check if we're finished
+            if (collected >= Calibration.MaxSamples)
+            {
+                State.Current.Calibrating = false;
+
+                var final = state.ActiveOffset.Value;
+                if (!final.IsIdentity && Matrix4x4.Decompose(final, out var scale, out var rotation, out var translation))
+                {
+                    // log some interesting stuff
+                    Utilities.Log($"Result - Scale: {scale}, Rotation: {rotation}, Translation: {translation}");
+                    Utilities.Log($"Gravity error - {_calibration.CheckGravityAlignment(rotation)}deg RMS");
+                }
+                else
+                {
+                    // I don't think this can happen, but if you're here because it just did, congrats
+                    Utilities.Log("Calibration complete but final matrix was invalid, try again.");
+                    state.ActiveOffset.Set(Matrix4x4.Identity);
+                    resetFilter = true;
+                }
+
                 _calibration.Reset();
                 state.WriteToDisk();
             }

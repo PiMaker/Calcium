@@ -16,7 +16,7 @@ public class Calibration
     public const int MaxSamples = 512;
     public int CollectedSampleCount => Pairs.Count;
 
-    readonly ConcurrentQueue<(Matrix4x4 A, Matrix4x4 B)> Pairs = new();
+    readonly ConcurrentQueue<(Matrix4x4 A, Matrix4x4 B, Vector3 TrackerUp, Vector3 HmdUp)> Pairs = new();
     readonly double[,] RotationNormal = new double[4, 4];
 
     const int RhsSize = 4;
@@ -110,8 +110,13 @@ public class Calibration
 
         if (Pairs.Count < MaxSamples)
         {
+            // Prepare world-up vectors for gravity check
+            var trackerUp = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitY, targetInverse));
+            var hmdUp = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitY, currentHmdInverse));
+
+            // Enqueue and update data for later solving
             AddRotationConstraint(a, b);
-            Pairs.Enqueue((a, b));
+            Pairs.Enqueue((a, b, trackerUp, hmdUp));
             _targetInverse = targetInverse;
             _prevHmdInverse = currentHmdInverse;
         }
@@ -266,7 +271,7 @@ public class Calibration
         Span<double> u = stackalloc double[3];
         Span<double> bv = stackalloc double[3];
         Span<double> row = stackalloc double[4];
-        foreach (var (a, b) in Pairs)
+        foreach (var (a, b, _, _) in Pairs)
         {
             // Per pair, one scalar equation per output component of
             //     t * (Id - Rb) + scale * (a * Rm) = b
@@ -372,5 +377,27 @@ public class Calibration
         m[1, 0] -= x; m[1, 1] -= w; m[1, 2] -= -z; m[1, 3] -= y;
         m[2, 0] -= y; m[2, 1] -= z; m[2, 2] -= w; m[2, 3] -= -x;
         m[3, 0] -= z; m[3, 1] -= -y; m[3, 2] -= x; m[3, 3] -= w;
+    }
+
+    // Gravity check: verify the solved mount rotation against the invariant
+    // that both tracking spaces share the same physical up direction. Each
+    // sample stored the world-up vector expressed in target-local (trackerUp)
+    // and HMD-local (hmdUp). If both spaces are gravity-aligned, the mount
+    // rotation must map one into the other: trackerUp * Rm = hmdUp. The RMS
+    // angle of that prediction over all pairs measures how well the spaces
+    // agree about vertical. A large residual means roll/pitch drift in either
+    // tracking system, or a non-gravity-aligned space, and the mount solve
+    // may be biased.
+    public double CheckGravityAlignment(Quaternion rotation)
+    {
+        var sumSquares = 0d;
+        foreach (var (_, _, trackerUp, hmdUp) in Pairs)
+        {
+            var predicted = Vector3.Normalize(Vector3.Transform(trackerUp, rotation));
+            var angle = Math.Acos(Vector3.Dot(predicted, hmdUp));
+            sumSquares += angle * angle;
+        }
+        var rms = Math.Sqrt(sumSquares / Pairs.Count);
+        return rms * (180d / Math.PI);
     }
 }

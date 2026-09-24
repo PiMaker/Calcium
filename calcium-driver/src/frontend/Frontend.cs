@@ -47,7 +47,7 @@ public class Frontend : IDisposable
             using var fontSmall = new Font("Segoe UI", 9f);
             using var fontMono = new Font("Consolas", 15f);
 
-            var window = new Window("Calcium", 700, 430, fontUI, icon)
+            var window = new Window("Calcium", 700, 444, fontUI, icon)
             {
                 CanMaximize = false,
                 CanResize = false,
@@ -119,11 +119,11 @@ public class Frontend : IDisposable
             };
             buttons.Children.Add(_versionLabel);
 
-            var speedLayout = new HorizontalLayout() { Width = BaseLayout.Fill, Height = 40, Spacing = 8, Margin = new Margin(0, 8, 0, 0) };
+            var speedLayout = new HorizontalLayout() { Width = BaseLayout.Fill, Height = 40, Spacing = 8 };
             _speedLabel = new Label($"Correction Speed ({State.Current.SpeedFactor:P0}):", centerVertically: true)
             {
-                Width = 180,
-                Height = 40,
+                Width = 190,
+                Height = 29,
                 Foreground = ForegroundColor,
                 Background = BackgroundColor,
             };
@@ -132,7 +132,7 @@ public class Frontend : IDisposable
             {
                 Width = BaseLayout.Fill,
                 Height = 40,
-                Margin = new Margin(0, 8, 0, 0),
+                Margin = new Margin(0, 8, 0, -8),
             };
             _speedSlider.OnValueChanged += (_, value) => SetSpeed((int)value);
             speedLayout.Children.Add(_speedSlider);
@@ -247,7 +247,7 @@ public class Frontend : IDisposable
             }
 
             // debug
-            _versionLabel.SetText($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: true)} B");
+            _versionLabel.SetText($"v{CalciumVersion.Version}, {GC.GetTotalAllocatedBytes(precise: false)} B");
         }
         catch (Exception ex)
         {
@@ -257,21 +257,17 @@ public class Frontend : IDisposable
 
     static void BuildDeviceRow(Device d, TextBuffer b)
     {
-        if (d.ID >= 10) b.Append($" ").Append($"{d.ID}");
-        else b.Append($"  ").Append($"{d.ID}");
-        b.Append($" ");
+        if (d.ID >= 10) b.Append($" {d.ID} ");
+        else b.Append($"  {d.ID} ");
         AppendField(b, d.TrackingSpace, 11);
-        b.Append($" ");
         AppendField(b, d.SerialNumber, 19);
-        b.Append($" ");
         AppendField(b, ClassToString(d.DeviceClass), 7);
-        b.Append($" ");
         AppendLastPosition(b, d);
 
         static void AppendField(TextBuffer b, string text, int width)
         {
             b.Append($"{text}");
-            for (var pad = width - text.Length; pad > 0; pad--)
+            for (var pad = width - text.Length; pad >= 0; pad--)
                 b.Append($" ");
         }
 

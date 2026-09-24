@@ -27,17 +27,18 @@ public static class Program
         _form = new Window("Calcium Installer", 440, 260, font, _icon)
         {
             CanMaximize = false,
-            CanResize = false
+            CanResize = false,
+            Background = darkColor,
         };
 
-        var versionLabel = new Label("v" + CalciumVersion.Version)
+        var versionLabel = new Label("v" + CalciumVersion.Version, Alignment.Right)
         {
-            X = 406, Y = 230, Width = 40,
+            X = 348, Y = 230, Width = 80,
             Foreground = Color.FromArgb(160, 160, 160),
             Background = darkColor,
         };
 
-        _pathLabel = new Label(centerHorizontally: true)
+        _pathLabel = new Label(alignment: Alignment.Center)
         {
             X = 8, Y = 24, Width = _form.Width - 16, Height = 42,
             Foreground = Color.White,
@@ -50,15 +51,10 @@ public static class Program
         _uninstallButton = new Button("Uninstall") { Y = 155, Width = BaseLayout.Fill, Height = 56, Margin = new Margin(46, 0), Font = bigFont };
         _uninstallButton.OnClick += _ => Uninstall();
         
-        var background = new Panel(0, 0, _form.Width, _form.Height, darkColor);
-
-        _form.Children.Add(background);
         _form.Children.Add(versionLabel);
         _form.Children.Add(_pathLabel);
         _form.Children.Add(_installButton);
         _form.Children.Add(_uninstallButton);
-
-        background.SendToBack();
 
         Refresh();
         Application.ScheduleTimer(Refresh, 1000);
@@ -78,11 +74,11 @@ public static class Program
     {
         SteamVrPath = FindSteamVrPath();
         var valid = SteamVrPath != null && File.Exists(Path.Combine(SteamVrPath, "bin", "win64", "vrserver.exe"));
-        _pathLabel.Text = SteamVrPath == null
-            ? "SteamVR not found in registry."
+        _pathLabel.SetText(SteamVrPath == null
+            ? new TextBuffer($"SteamVR not found in registry.")
             : valid
-                ? $"SteamVR driver path:\n{SteamVrPath}"
-                : $"Not a SteamVR folder (missing bin\\win64\\vrserver.exe):\n{SteamVrPath}";
+                ? new TextBuffer($"SteamVR driver path:\n{SteamVrPath}")
+                : new TextBuffer($"Not a SteamVR folder (missing bin\\win64\\vrserver.exe):\n{SteamVrPath}"));
         _installButton.Disabled = !valid;
         _uninstallButton.Disabled = !valid || !Detected;
 

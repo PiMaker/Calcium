@@ -10,12 +10,8 @@ public static class Calibration
 {
     const float MinimumRotation = 0.0225f; // Ignore pairs with very small motion
 
-    static bool _active;
     static Matrix4x4 _targetInverse;
     static Matrix4x4 _prevHmdInverse;
-
-    internal static Lock CalibrationLock = new();
-    internal static bool Active => _active;
 
     public const int MaxSamples = 512;
     public static int CollectedSampleCount => Pairs.Count;
@@ -28,16 +24,12 @@ public static class Calibration
     static readonly double[,] _scratch4x4 = new double[4, 4];
     static readonly double[,] _scratch3x3 = new double[3, 3];
 
-    internal static void Stop()
+    internal static void Reset()
     {
-        if (_active)
-        {
-            _active = false;
-            _targetInverse = Matrix4x4.Identity;
-            _prevHmdInverse = Matrix4x4.Identity;
-            Array.Clear(RotationNormal);
-            Pairs.Clear();
-        }
+        _targetInverse = Matrix4x4.Identity;
+        _prevHmdInverse = Matrix4x4.Identity;
+        Array.Clear(RotationNormal);
+        Pairs.Clear();
     }
 
     // Algorithm based on Hand-Eye calibration with fixed AX = XB.
@@ -88,14 +80,12 @@ public static class Calibration
 
         if (!Matrix4x4.Invert(hmd, out var currentHmdInverse)) return false;
 
-        if (!_active)
+        if (_targetInverse.IsIdentity)
         {
             // first input is set up as the anchor, don't calibrate on invalid prev values
-            _active = true;
+            Reset();
             _targetInverse = targetInverse;
             _prevHmdInverse = currentHmdInverse;
-            Array.Clear(RotationNormal);
-            Pairs.Clear();
             return false;
         }
 

@@ -7,7 +7,9 @@ public class State
 
     public volatile string ActiveSerialNumber = "";
     public volatile uint ActiveTargetIndex = 0;
-    public volatile bool Calibrate = false;
+
+    public volatile bool Calibrating = false;
+    public event Action OnCalibrationComplete;
 
     public volatile int Speed = 100; // default speed value (0-200)
     public float SpeedFactor => Speed / 100f;
@@ -21,15 +23,16 @@ public class State
 
     public void BeginCalibration()
     {
-        if (Calibrate) return;
-        Calibrate = true;
+        if (Calibrating) return;
+        Calibrating = true;
         ActiveOffset.Set(Matrix4x4.Identity);
         ActiveCorrection.Set(Matrix4x4.Identity);
     }
 
     public void FinishCalibration()
     {
-        Calibrate = false;
+        Calibrating = false;
+        OnCalibrationComplete?.Invoke();
     }
 
     public void WriteToDisk()
@@ -83,5 +86,5 @@ public class Device(uint id, string trackingSpace, string serialNumber, int devi
     public volatile int DeviceClass = deviceClass;
 
     // TODO: Add more devices here
-    public bool IsKnownHandTracking => SerialNumber.StartsWith("VRLINKQ_Hand");
+    public bool IsKnownHandTracking => SerialNumber.StartsWith("VRLINKQ_Hand") || SerialNumber == "HANDL" || SerialNumber == "HANDR";
 }

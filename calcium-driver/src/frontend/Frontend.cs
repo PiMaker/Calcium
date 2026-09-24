@@ -18,7 +18,6 @@ public class Frontend : IDisposable
     ListBox _deviceList;
     Label _helpText;
     Button _calibrateButton;
-    Button _resetCalibrationButton;
     Checkbox _minimizeOnStartup;
     Label _speedLabel;
     Slider _speedSlider;
@@ -30,6 +29,7 @@ public class Frontend : IDisposable
     readonly StringBuilder _row = new();
     readonly Dictionary<uint, Vector3> _lastDevicePositions = new();
     DateTimeOffset? _lastSpeedChange;
+    bool _playDing;
 
     public Frontend()
     {
@@ -98,10 +98,6 @@ public class Frontend : IDisposable
             _calibrateButton.OnClick += _ => Calibrate();
             buttons.Children.Add(_calibrateButton);
 
-            _resetCalibrationButton = new Button("Reset Calibration") { Width = 190, Height = 40, Disabled = true, Margin = new Margin(8, 0) };
-            _resetCalibrationButton.OnClick += _ => ResetCalibration();
-            buttons.Children.Add(_resetCalibrationButton);
-
             _minimizeOnStartup = new Checkbox()
             {
                 Width = 20,
@@ -157,7 +153,9 @@ public class Frontend : IDisposable
             _speedSlider.Max = 200;
             _speedSlider.Value = State.Current.Speed;
 
-            Application.ScheduleTimer(RefreshDevices, 250);
+            State.Current.OnCalibrationComplete += DispatchDing;
+
+            Application.ScheduleTimer(RefreshDevices, 333);
             RefreshDevices();
             if (State.Current.MinimizeOnStartup)
                 window.State = Window.WindowState.Minimized;
@@ -181,6 +179,12 @@ public class Frontend : IDisposable
     {
         try
         {
+            if (_playDing)
+            {
+                Application.PlaySound(MessageBoxIcon.Information);
+                _playDing = false;
+            }
+
             _deviceCache.Clear();
             foreach (var dev in State.Current.Devices.Values)
             {
@@ -224,19 +228,9 @@ public class Frontend : IDisposable
             }
 
             // calibration logic
-            var calibrate = State.Current.Calibrate;
-            if (calibrate)
-            {
-                var collected = Calibration.CollectedSampleCount;
-                if (collected >= Calibration.MaxSamples)
-                {
-                    Application.PlaySound(MessageBoxIcon.Information);
-                    State.Current.FinishCalibration();
-                }
-            }
-            _calibrateButton.Disabled = State.Current.ActiveTargetIndex == 0 || calibrate;
+            var calibrating = State.Current.Calibrating;
             var hasCalibration = !State.Current.ActiveOffset.Value.IsIdentity;
-            _resetCalibrationButton.Disabled = !hasCalibration;
+            _calibrateButton.Disabled = State.Current.ActiveTargetIndex == 0 || calibrating;
 
             // set help text based on current app status
             var activeSerial = State.Current.ActiveSerialNumber;
@@ -250,7 +244,7 @@ public class Frontend : IDisposable
                 _helpText.SetTextNoAlloc(_textBuffer.Set(
                     $"Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍"));
             }
-            else if (calibrate)
+            else if (calibrating)
             {
                 var samples = Calibration.CollectedSampleCount;
                 var progress = Math.Round(samples / (float)Calibration.MaxSamples * 100f, 1);
@@ -325,6 +319,13 @@ public class Frontend : IDisposable
 
             string FloatToString(float value) => value < 0 ? value.ToString("F1") : " " + value.ToString("F1");
         }
+
+        static string ClassToString(int deviceClass) => deviceClass switch
+        {
+            OpenVr.DeviceClassController => "Ctrl",
+            OpenVr.DeviceClassGenericTracker => "Tracker",
+            _ => deviceClass.ToString(),
+        };
     }
 
     int SelectedIndex()
@@ -339,35 +340,6 @@ public class Frontend : IDisposable
         return -1;
     }
 
-    static string ClassToString(int deviceClass) => deviceClass switch
-    {
-        OpenVr.DeviceClassController => "Ctrl",
-        OpenVr.DeviceClassGenericTracker => "Tracker",
-        _ => deviceClass.ToString(),
-    };
-
-    void Calibrate()
-    {
-        State.Current.BeginCalibration();
-    }
-
-    void ResetCalibration()
-    {
-        if (_window.MessageBox("Reset Calibration", "Are you sure you want to delete the current calibration data?", _window.Icon, MessageBoxIcon.Warning))
-        {
-            State.Current.ActiveOffset.Set(Matrix4x4.Identity);
-            State.Current.ActiveSerialNumber = string.Empty;
-            State.Current.WriteToDisk();
-            _resetCalibrationButton.Disabled = true;
-        }
-    }
-
-    void SetMinimizeOnStartup(bool minimize)
-    {
-        State.Current.MinimizeOnStartup = minimize;
-        State.Current.WriteToDisk();
-    }
-
     void SetSpeed(int speed)
     {
         State.Current.Speed = speed;
@@ -375,8 +347,19 @@ public class Frontend : IDisposable
         _speedLabel.SetTextNoAlloc(_textBuffer.Set($"Correction Speed ({Math.Round(State.Current.SpeedFactor * 100f, 0)}%):"));
     }
 
+    void DispatchDing() => _playDing = true;
+
+    static void Calibrate() => State.Current.BeginCalibration();
+
+    static void SetMinimizeOnStartup(bool minimize)
+    {
+        State.Current.MinimizeOnStartup = minimize;
+        State.Current.WriteToDisk();
+    }
+
     public void Dispose()
     {
+        State.Current.OnCalibrationComplete -= DispatchDing;
         _windowCreated.Wait();
         _closeConfirmed = true; // driver unload: close without confirmation
         if (_window is Window window)

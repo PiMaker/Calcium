@@ -68,7 +68,7 @@ public static class PoseHook
                                   pose.poseIsValid != 0 &&
                                   pose.result == OpenVr.TrackingResultRunningOk &&
                                   !selfDevice.Outliers.IsOutlierAndStore(poseMatrix,
-                                      state.Calibrate ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting * State.Current.SpeedFactor);
+                                      state.Calibrating ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting * State.Current.SpeedFactor);
 
                     if (isValid)
                     {
@@ -101,16 +101,6 @@ public static class PoseHook
                             Utilities.ApplyWorldTransform(ref pose, _targetRemovalOffset);
                     }
                 }
-
-                if (!state.Calibrate && Calibration.Active)
-                {
-                    lock (Calibration.CalibrationLock)
-                    {
-                        Utilities.Log("Stopping calibration collector.");
-                        Calibration.Stop();
-                        state.WriteToDisk();
-                    }
-                }
             }
         }
         catch (Exception e)
@@ -139,16 +129,25 @@ public static class PoseHook
 
         // calibration logic, if requested
         var resetFilter = false;
-        var calibrate = state.Calibrate;
-        if (calibrate)
+        if (state.Calibrating)
         {
-            lock (Calibration.CalibrationLock)
+            if (Calibration.Update(activeInverse, hmdPose, out var result))
             {
-                if (Calibration.Update(activeInverse, hmdPose, out var result))
+                state.ActiveOffset.Set(result);
+                resetFilter = true;
+            }
+
+            if (Calibration.CollectedSampleCount >= Calibration.MaxSamples)
+            {
+                var collected = Calibration.CollectedSampleCount;
+                if (collected >= Calibration.MaxSamples)
                 {
-                    state.ActiveOffset.Set(result);
-                    resetFilter = true;
+                    State.Current.FinishCalibration();
                 }
+
+                Utilities.Log("Calibration complete!");
+                Calibration.Reset();
+                state.WriteToDisk();
             }
         }
 

@@ -157,7 +157,7 @@ public class Frontend : IDisposable
 
             Utilities.Log("Starting frontend event loop");
             Application.RunEventLoop(); // blocks until the window closes
-            State.Current.ActiveTargetIndex = 0; // UI closed: disable tracking
+            State.Current.ActiveSerialNumber = null; // UI closed: disable tracking
             _window = null;
         }
         catch (Exception ex)
@@ -190,6 +190,7 @@ public class Frontend : IDisposable
 
             var i = 1;
             var foundActive = false;
+            var activeSerial = State.Current.ActiveSerialNumber;
             foreach (var dev in _deviceCache)
             {
                 _rowBuffer.Clear();
@@ -200,11 +201,20 @@ public class Frontend : IDisposable
                 else if (!_deviceList.Items[i].Equals(_rowBuffer))
                     _deviceList.Items[i].Set($"{_rowBuffer}");
 
-                if (State.Current.ActiveTargetIndex == dev.ID)
+                // check if we select this entry
+                // if none are found but activeSerial is set we will not select any entry until the stored tracked appears
+                if (activeSerial == dev.SerialNumber)
+                {
                     foundActive = true;
+                    _deviceList.SelectedIndex = i;
+                }
 
                 i++;
             }
+
+            // not found and not saved, select "Disabled" entry
+            if (!foundActive && string.IsNullOrEmpty(activeSerial))
+                _deviceList.SelectedIndex = 0;
 
             for (var j = _deviceList.Items.Count - 1; j >= i; j--)
                 _deviceList.Items.Remove(_deviceList.Items[j]);
@@ -212,15 +222,14 @@ public class Frontend : IDisposable
             // calibration logic
             var calibrating = State.Current.Calibrating;
             var hasCalibration = !State.Current.ActiveOffset.Value.IsIdentity;
-            _calibrateButton.Disabled = State.Current.ActiveTargetIndex == 0 || calibrating;
+            _calibrateButton.Disabled = string.IsNullOrEmpty(activeSerial) || calibrating;
 
             // set help text based on current app status
-            var activeSerial = State.Current.ActiveSerialNumber;
             if (!foundActive && !string.IsNullOrEmpty(activeSerial))
             {
                 _helpText.SetText($"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛");
             }
-            else if (State.Current.ActiveTargetIndex == 0)
+            else if (string.IsNullOrEmpty(activeSerial))
             {
                 _helpText.SetText($"Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍");
             }
@@ -228,7 +237,7 @@ public class Frontend : IDisposable
             {
                 _helpText.SetText($"Calibration progress: {_lastCalibrationProgress:P1}\nGently move and rotate your head along all axis, slowly move about your playspace, stop periodically! 🔃");
             }
-            else if (State.Current.ActiveTargetIndex != 0)
+            else if (!string.IsNullOrEmpty(activeSerial))
             {
                 if (!hasCalibration)
                     _helpText.SetText($"No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️");
@@ -302,12 +311,12 @@ public class Frontend : IDisposable
     {
         if (index == 0)
         {
-            State.Current.ActiveTargetIndex = 0; // disabled
+            State.Current.ActiveSerialNumber = null; // disabled
             return;
         }
 
         if (--index < 0 || index >= _deviceCache.Count) return;
-        State.Current.ActiveTargetIndex = _deviceCache[index].ID;
+        State.Current.ActiveSerialNumber = _deviceCache[index].SerialNumber;
     }
 
     void ReportCalibrationProgress(float progress) => _lastCalibrationProgress = progress;

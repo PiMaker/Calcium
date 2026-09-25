@@ -22,10 +22,6 @@ public static class PoseHook
                     if (pose.deviceIsConnected == 0) return;
                     state.InsertDevice(deviceIndex);
                     selfDevice = state.Devices[deviceIndex];
-
-                    // activate after disk restore on launch if serial matches
-                    if (selfDevice.SerialNumber == state.ActiveSerialNumber)
-                        state.ActiveTargetIndex = deviceIndex;
                 }
 
                 // check for Hand controllers _before_ disconnect handling
@@ -41,15 +37,17 @@ public static class PoseHook
                 }
 
                 var poseMatrix = Utilities.GetPoseMatrix(pose);
-                var activeTargetIndex = state.ActiveTargetIndex;
-                var isActiveTracker = deviceIndex != 0 /* HMD */ && deviceIndex == activeTargetIndex;
-                var correctedTrackingSpace = state.Devices.TryGetValue(activeTargetIndex, out var device) ? device.TrackingSpace : null;
+                var activeTargetSerial = state.ActiveSerialNumber;
+                var selfSerial = selfDevice.SerialNumber;
+                var isActiveTracker = deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(selfSerial) && selfSerial == activeTargetSerial;
+                if (isActiveTracker) state.ActiveTrackingSpace = selfTrackingSpace;
+                var correctedTrackingSpace = state.ActiveTrackingSpace;
 
                 if (selfDevice.DeviceClass == OpenVr.DeviceClassTrackingReference)
                 {
                     // basestations should still be shifted, but aren't needed for calibration
                     selfDevice.LastPose.Set(poseMatrix);
-                    if (activeTargetIndex != 0 && selfDevice.TrackingSpace == correctedTrackingSpace)
+                    if (!string.IsNullOrEmpty(activeTargetSerial) && selfDevice.TrackingSpace == correctedTrackingSpace)
                         Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
                     return;
                 }
@@ -82,7 +80,7 @@ public static class PoseHook
                         selfDevice.LastPose.Set(poseMatrix);
                     }
 
-                    if (deviceIndex != 0 /* HMD */ && activeTargetIndex != 0 &&
+                    if (deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(activeTargetSerial) &&
                         selfDevice.TrackingSpace == correctedTrackingSpace)
                     {
                         // apply the latest correction data to the pose

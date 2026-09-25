@@ -7,7 +7,6 @@ public class State
     public readonly PoseHandler PoseHandler = new();
 
     public volatile string ActiveTrackerSerial = null; // serial number of the tracker mounted to the HMD, selected by user
-    public volatile string ProxyLighthouseSerial = null; // serial number of proxy anchor lighthouse, null if proxy tracking is disabled
 
     // calibration state and start/end logic
     private volatile int _calibrating = 0;
@@ -22,9 +21,6 @@ public class State
                 {
                     ActiveOffset.Set(Matrix4x4.Identity);
                     ActiveCorrection.Set(Matrix4x4.Identity);
-                    ProxyLighthouseOffset.Set(Matrix4x4.Identity);
-                    ProxyLighthouseSerial = null; // disable proxy tracking on Calibrate
-                    ProxyLighthouseId = 0;
                     Utilities.Log("Calibration started.");
                 }
             }
@@ -52,11 +48,9 @@ public class State
     // connected devices and their properties
     public readonly ConcurrentDictionary<uint, Device> Devices = new();
     public volatile string ActiveTrackingSpace = null; // cache of TrackingSpace matching ActiveSerialNumber, set and used by
-    public volatile uint ProxyLighthouseId = 0;
 
     // active matrices
     public PooledAtomicStrongBox<Matrix4x4> ActiveOffset = new(32, Matrix4x4.Identity); // offset of the rigidly mounted tracker from HMD pivot
-    public PooledAtomicStrongBox<Matrix4x4> ProxyLighthouseOffset = new(32, Matrix4x4.Identity); // offset of the proxy anchor lighthouse from HMD space origin
     public PooledAtomicStrongBox<Matrix4x4> ActiveCorrection = new(32, Matrix4x4.Identity); // active world-space correction matrix
 
     public void InsertDevice(uint id)
@@ -78,13 +72,10 @@ public class State
     public void WriteToDisk()
     {
         var offset = ActiveOffset.Value;
-        var proxy = ProxyLighthouseOffset.Value;
         var path = Path.Combine(Utilities.GetDataPath(), "settings.ini");
         var ini =
             $"TargetSerialNumber = {ActiveTrackerSerial ?? ""}{Environment.NewLine}" +
-            $"ProxyLighthouseSerial = {ProxyLighthouseSerial ?? ""}{Environment.NewLine}" +
             $"ActiveOffset = {Utilities.SerializeMatrix(offset)}{Environment.NewLine}" +
-            $"ProxyLighthouseOffset = {Utilities.SerializeMatrix(proxy)}{Environment.NewLine}" +
             $"MinimizeOnStartup = {MinimizeOnStartup}{Environment.NewLine}" +
             $"Speed = {Speed}";
         File.WriteAllText(path, ini);
@@ -106,9 +97,7 @@ public class State
                 var key = parts[0].Trim();
                 var value = parts[1].Trim();
                 if (key == "TargetSerialNumber") ActiveTrackerSerial = value;
-                if (key == "ProxyLighthouseSerial") ProxyLighthouseSerial = value;
                 if (key == "ActiveOffset") ActiveOffset.Set(Utilities.DeserializeMatrix(value).GetValueOrDefault(Matrix4x4.Identity));
-                if (key == "ProxyLighthouseOffset") ProxyLighthouseOffset.Set(Utilities.DeserializeMatrix(value).GetValueOrDefault(Matrix4x4.Identity));
                 if (key == "MinimizeOnStartup") MinimizeOnStartup = bool.Parse(value);
                 if (key == "Speed") Speed = int.Parse(value);
             }

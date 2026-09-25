@@ -16,7 +16,6 @@ public class Frontend : IDisposable
     ListBox _deviceList;
     Label _helpText;
     Button _calibrateButton;
-    Button _proxyTrackingButton;
     Checkbox _minimizeOnStartup;
     Label _speedLabel;
     Slider _speedSlider;
@@ -89,10 +88,6 @@ public class Frontend : IDisposable
             _calibrateButton = new Button("Calibrate") { Width = 150, Height = 40, Disabled = true };
             _calibrateButton.OnClick += _ => Calibrate();
             buttons.Children.Add(_calibrateButton);
-
-            _proxyTrackingButton = new Button("Engage Proxy Tracking") { Width = 150, Height = 40, Disabled = true };
-            _proxyTrackingButton.OnClick += _ => EngageProxyTracking();
-            buttons.Children.Add(_proxyTrackingButton);
 
             _minimizeOnStartup = new Checkbox()
             {
@@ -197,7 +192,6 @@ public class Frontend : IDisposable
             var foundActive = false;
             var activeSerial = State.Current.ActiveTrackerSerial;
             var activeTrackingSpace = State.Current.ActiveTrackingSpace;
-            var activeProxySerial = State.Current.ProxyLighthouseSerial;
             foreach (var dev in _deviceCache)
             {
                 _rowBuffer.Clear();
@@ -230,17 +224,9 @@ public class Frontend : IDisposable
             var calibrating = State.Current.Calibrating;
             var hasCalibration = !State.Current.ActiveOffset.Value.IsIdentity;
             _calibrateButton.Disabled = string.IsNullOrEmpty(activeSerial) || string.IsNullOrEmpty(activeTrackingSpace) || calibrating;
-            _proxyTrackingButton.Disabled = _calibrateButton.Disabled || !string.IsNullOrEmpty(activeProxySerial);
 
             // set help text based on current app status
-            if (!string.IsNullOrEmpty(activeProxySerial))
-            {
-                if (State.Current.ProxyLighthouseId == 0)
-                    _helpText.SetText($"A proxy lighthouse was saved by serial number ({activeProxySerial}), but isn't available yet. Make sure it's turned on and at least one device is tracking! ⌛");
-                else
-                    _helpText.SetText($"Correction active in proxy mode. Everything should be working! ✔️");
-            }
-            else if (!foundActive && !string.IsNullOrEmpty(activeSerial))
+            if (!foundActive && !string.IsNullOrEmpty(activeSerial))
             {
                 _helpText.SetText($"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛");
             }
@@ -324,9 +310,6 @@ public class Frontend : IDisposable
 
     private void OnSelectedIndexChanged(ListBox _, int index)
     {
-        State.Current.ProxyLighthouseSerial = null;
-        State.Current.ProxyLighthouseId = 0;
-
         if (index == 0)
         {
             State.Current.ActiveTrackerSerial = null; // disabled
@@ -351,19 +334,6 @@ public class Frontend : IDisposable
         State.Current.Speed = speed;
         _lastSpeedChange = DateTimeOffset.UtcNow;
         _speedLabel.SetText($"Correction Speed ({State.Current.SpeedFactor:P0}):");
-    }
-    static void EngageProxyTracking()
-    {
-        // find first lighthouse
-        foreach (var device in State.Current.Devices.Values)
-        {
-            if (device.ID > 0 && device.DeviceClass == OpenVr.DeviceClassTrackingReference)
-            {
-                State.Current.PoseHandler.EngageProxyTracking(device.ID);
-                State.Current.WriteToDisk();
-                break;
-            }
-        }
     }
 
     public void Dispose()

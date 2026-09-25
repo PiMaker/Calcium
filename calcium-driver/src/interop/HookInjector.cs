@@ -38,7 +38,7 @@ public static unsafe class HookInjector
             if (host == null) return;
 
             var target = (IntPtr)host->VTable->TrackedDevicePoseUpdated;
-            _poseOriginal = _engine.CreateHook<OpenVr.TrackedDevicePoseUpdated>(target, PoseHook.PoseDetour);
+            _poseOriginal = _engine.CreateHook<OpenVr.TrackedDevicePoseUpdated>(target, PoseHandler.PoseDetour);
             _engine.EnableHook(_poseOriginal);
         }
         catch (Exception e)

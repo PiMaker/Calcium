@@ -1,6 +1,6 @@
 using System.Numerics;
 
-public static class PoseHook
+public static class PoseHandler
 {
     const float MaxRotationSpeedCorrecting = 0.75f; // radians per second
     const float MaxRotationSpeedCalibrating = 1.5f; // radians per second

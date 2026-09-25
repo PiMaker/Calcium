@@ -200,8 +200,9 @@ public class PoseHandler
                 return;
             }
 
-            // TODO: Apply correction matrix to lighthousePose the same way Utilities.ApplyWorldTransform
-            var lighthouseInHmdSpace = lighthousePose;
+            // Same as Utilities.ApplyWorldTransform: lighthouse-local -> lighthouse space -> corrected HMD space.
+            // This is the pose the proxy chain below re-derives the correction from (P * C = O => C = P^-1 * O).
+            var lighthouseInHmdSpace = lighthousePose * correction;
 
             state.ProxyLighthouseOffset.Set(lighthouseInHmdSpace);
             state.ProxyLighthouseSerial = device.SerialNumber;

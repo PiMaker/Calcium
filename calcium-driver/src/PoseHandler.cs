@@ -1,111 +1,95 @@
 using System.Numerics;
 
-public static class PoseHandler
+public class PoseHandler
 {
     const float MaxRotationSpeedCorrecting = 0.75f; // radians per second
     const float MaxRotationSpeedCalibrating = 1.5f; // radians per second
 
-    static readonly CorrectionFilter _filter = new();
-    static readonly Calibration _calibration = new();
-    static readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it
+    readonly CorrectionFilter _filter = new();
+    readonly Calibration _calibration = new();
+    readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it
 
-    public static unsafe void PoseDetour(IntPtr self, uint deviceIndex, IntPtr posePtr, uint structSize)
+    public void HandleIncomingPose(uint deviceIndex, ref DriverPose_t pose)
     {
-        try
+        var state = State.Current;
+        if (!state.Devices.TryGetValue(deviceIndex, out var selfDevice))
         {
-            if (posePtr != IntPtr.Zero && structSize == OpenVr.DriverPoseSize)
+            if (pose.deviceIsConnected == 0) return;
+            state.InsertDevice(deviceIndex);
+            selfDevice = state.Devices[deviceIndex];
+        }
+
+        // check for Hand controllers _before_ disconnect handling
+        // we expect these to stay connected forever once they show up, but they report as disconnected when not in view of tracking cams
+        var selfTrackingSpace = selfDevice.TrackingSpace;
+        if (string.IsNullOrEmpty(selfTrackingSpace) || selfDevice.IsKnownHandTracking)
+            return;
+
+        if (pose.deviceIsConnected == 0)
+        {
+            state.RemoveDevice(deviceIndex);
+            return;
+        }
+
+        var poseMatrix = Utilities.GetPoseMatrix(pose);
+        var activeTargetSerial = state.ActiveTrackerSerial;
+        var selfSerial = selfDevice.SerialNumber;
+        var isActiveTracker = deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(selfSerial) && selfSerial == activeTargetSerial;
+        if (isActiveTracker) state.ActiveTrackingSpace = selfTrackingSpace;
+        var correctedTrackingSpace = state.ActiveTrackingSpace;
+
+        if (selfDevice.DeviceClass == OpenVr.DeviceClassTrackingReference)
+        {
+            // basestations should still be shifted, but aren't needed for calibration
+            selfDevice.LastPose.Set(poseMatrix);
+            if (!string.IsNullOrEmpty(activeTargetSerial) && selfDevice.TrackingSpace == correctedTrackingSpace)
+                Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
+            return;
+        }
+
+        lock (selfDevice.PoseGate)
+        {
+            var isValid = pose.deviceIsConnected != 0 &&
+                            pose.poseIsValid != 0 &&
+                            pose.result == OpenVr.TrackingResultRunningOk &&
+                            !selfDevice.Outliers.IsOutlierAndStore(poseMatrix,
+                                state.Calibrating ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting * State.Current.SpeedFactor);
+
+            if (isValid)
             {
-                ref var pose = ref *(DriverPose_t*)posePtr;
-                var state = State.Current;
-                if (!state.Devices.TryGetValue(deviceIndex, out var selfDevice))
-                {
-                    if (pose.deviceIsConnected == 0) return;
-                    state.InsertDevice(deviceIndex);
-                    selfDevice = state.Devices[deviceIndex];
-                }
+                // LastPose tracking
+                selfDevice.LastPose.Set(poseMatrix);
 
-                // check for Hand controllers _before_ disconnect handling
-                // we expect these to stay connected forever once they show up, but they report as disconnected when not in view of tracking cams
-                var selfTrackingSpace = selfDevice.TrackingSpace;
-                if (string.IsNullOrEmpty(selfTrackingSpace) || selfDevice.IsKnownHandTracking)
-                    return;
-
-                if (pose.deviceIsConnected == 0)
-                {
-                    state.RemoveDevice(deviceIndex);
-                    return;
-                }
-
-                var poseMatrix = Utilities.GetPoseMatrix(pose);
-                var activeTargetSerial = state.ActiveSerialNumber;
-                var selfSerial = selfDevice.SerialNumber;
-                var isActiveTracker = deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(selfSerial) && selfSerial == activeTargetSerial;
-                if (isActiveTracker) state.ActiveTrackingSpace = selfTrackingSpace;
-                var correctedTrackingSpace = state.ActiveTrackingSpace;
-
-                if (selfDevice.DeviceClass == OpenVr.DeviceClassTrackingReference)
-                {
-                    // basestations should still be shifted, but aren't needed for calibration
-                    selfDevice.LastPose.Set(poseMatrix);
-                    if (!string.IsNullOrEmpty(activeTargetSerial) && selfDevice.TrackingSpace == correctedTrackingSpace)
-                        Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
-                    return;
-                }
-
-                lock (selfDevice.PoseGate)
-                {
-                    var isValid = pose.deviceIsConnected != 0 &&
-                                  pose.poseIsValid != 0 &&
-                                  pose.result == OpenVr.TrackingResultRunningOk &&
-                                  !selfDevice.Outliers.IsOutlierAndStore(poseMatrix,
-                                      state.Calibrating ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting * State.Current.SpeedFactor);
-
-                    if (isValid)
-                    {
-                        // LastPose tracking
-                        selfDevice.LastPose.Set(poseMatrix);
-
-                        // handle running correction and calibration
-                        if (isActiveTracker)
-                            HandleValidActiveTrackerPose(state, poseMatrix);
-                    }
-                    else if (deviceIndex == 0 /* HMD */)
-                    {
-                        // ignore outlier/error pose, reset LastPose to indicate for calibration to skip a step
-                        selfDevice.LastPose.Set(Matrix4x4.Identity);
-                    }
-                    else
-                    {
-                        // TODO: For debugging trackers that die in UI
-                        selfDevice.LastPose.Set(poseMatrix);
-                    }
-
-                    if (deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(activeTargetSerial) &&
-                        selfDevice.TrackingSpace == correctedTrackingSpace)
-                    {
-                        // apply the latest correction data to the pose
-                        Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
-
-                        // hide active target tracker
-                        if (isActiveTracker)
-                            Utilities.ApplyWorldTransform(ref pose, _targetRemovalOffset);
-                    }
-                }
+                // handle running correction and calibration
+                if (isActiveTracker)
+                    HandleValidActiveTrackerPose(state, poseMatrix);
             }
-        }
-        catch (Exception e)
-        {
-            Utilities.Log($"An exception occurred in PoseDetour: {e}");
-        }
-        finally
-        {
-            // always call the original exactly once, even on early-out
-            HookInjector._poseOriginal(self, deviceIndex, posePtr, structSize);
+            else if (deviceIndex == 0 /* HMD */)
+            {
+                // ignore outlier/error pose, reset LastPose to indicate for calibration to skip a step
+                selfDevice.LastPose.Set(Matrix4x4.Identity);
+            }
+            else
+            {
+                // TODO: For debugging trackers that die in UI
+                selfDevice.LastPose.Set(poseMatrix);
+            }
+
+            if (deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(activeTargetSerial) &&
+                selfDevice.TrackingSpace == correctedTrackingSpace)
+            {
+                // apply the latest correction data to the pose
+                Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
+
+                // hide active target tracker
+                if (isActiveTracker)
+                    Utilities.ApplyWorldTransform(ref pose, _targetRemovalOffset);
+            }
         }
     }
 
     // must hold activeDevice.PoseLock, updates correction matrix
-    static void HandleValidActiveTrackerPose(State state, Matrix4x4 poseMatrix)
+    void HandleValidActiveTrackerPose(State state, Matrix4x4 poseMatrix)
     {
         // check if we and the HMD have a valid, recent pose
         if (!Matrix4x4.Invert(poseMatrix, out var activeInverse) ||

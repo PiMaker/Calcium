@@ -157,7 +157,7 @@ public class Frontend : IDisposable
 
             Utilities.Log("Starting frontend event loop");
             Application.RunEventLoop(); // blocks until the window closes
-            State.Current.ActiveSerialNumber = null; // UI closed: disable tracking
+            State.Current.ActiveTrackerSerial = null; // UI closed: disable tracking
             _window = null;
         }
         catch (Exception ex)
@@ -190,7 +190,7 @@ public class Frontend : IDisposable
 
             var i = 1;
             var foundActive = false;
-            var activeSerial = State.Current.ActiveSerialNumber;
+            var activeSerial = State.Current.ActiveTrackerSerial;
             var activeTrackingSpace = State.Current.ActiveTrackingSpace;
             foreach (var dev in _deviceCache)
             {
@@ -312,12 +312,12 @@ public class Frontend : IDisposable
     {
         if (index == 0)
         {
-            State.Current.ActiveSerialNumber = null; // disabled
+            State.Current.ActiveTrackerSerial = null; // disabled
             return;
         }
 
         if (--index < 0 || index >= _deviceCache.Count) return;
-        State.Current.ActiveSerialNumber = _deviceCache[index].SerialNumber;
+        State.Current.ActiveTrackerSerial = _deviceCache[index].SerialNumber;
     }
 
     void ReportCalibrationProgress(float progress) => _lastCalibrationProgress = progress;

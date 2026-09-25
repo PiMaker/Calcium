@@ -4,7 +4,7 @@ using MinHook;
 public static unsafe class HookInjector
 {
     static readonly HookEngine _engine = new();
-    internal static OpenVr.TrackedDevicePoseUpdated _poseOriginal = null!;
+    internal static OpenVr.TrackedDevicePoseUpdated _poseOriginal = null;
 
     // Entry-point: this gets called by OpenVR after our DLL is loaded.
     [UnmanagedCallersOnly(EntryPoint = "HmdDriverFactory")]
@@ -38,12 +38,37 @@ public static unsafe class HookInjector
             if (host == null) return;
 
             var target = (IntPtr)host->VTable->TrackedDevicePoseUpdated;
-            _poseOriginal = _engine.CreateHook<OpenVr.TrackedDevicePoseUpdated>(target, PoseHandler.PoseDetour);
+            _poseOriginal = _engine.CreateHook<OpenVr.TrackedDevicePoseUpdated>(target, PoseDetour);
             _engine.EnableHook(_poseOriginal);
         }
         catch (Exception e)
         {
             Utilities.Log($"Pose arm failed: {e.Message}");
+        }
+    }
+
+    private static void PoseDetour(IntPtr self, uint deviceIndex, IntPtr posePtr, uint structSize)
+    {
+        try
+        {
+            if (posePtr == IntPtr.Zero || structSize != OpenVr.DriverPoseSize)
+            {
+                Utilities.Log("Invalid pose pointer or struct size, disabling hooks.");
+                _engine.DisableHooks();
+                return;
+            }
+
+            ref var pose = ref *(DriverPose_t*)posePtr;
+            State.Current.PoseHandler.HandleIncomingPose(deviceIndex, ref pose);
+        }
+        catch (Exception e)
+        {
+            Utilities.Log($"An exception occurred in PoseDetour: {e}");
+        }
+        finally
+        {
+            // always call the original exactly once, even on early-out/disable
+            _poseOriginal(self, deviceIndex, posePtr, structSize);
         }
     }
 }

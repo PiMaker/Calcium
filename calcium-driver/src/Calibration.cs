@@ -395,6 +395,7 @@ public class Calibration
         {
             var predicted = Vector3.Normalize(Vector3.Transform(trackerUp, rotation));
             var angle = Math.Acos(Vector3.Dot(predicted, hmdUp));
+            Utilities.Log($"[Debug] Tracker Up: {trackerUp}, HMD Up: {hmdUp}, Predicted: {predicted}, Angle (pred<->hmd): {angle}");
             sumSquares += angle * angle;
         }
         var rms = Math.Sqrt(sumSquares / Pairs.Count);

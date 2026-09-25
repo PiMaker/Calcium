@@ -70,7 +70,7 @@ public class Frontend : IDisposable
                 Background = ElementColor,
             };
             _deviceList.OnSelectedIndexChanged += OnSelectedIndexChanged;
-            _deviceList.Items.Add(new($"Disable Space Correction"));
+            _deviceList.Items.Add(new($"    Disable Space Correction"));
             layout.Children.Add(_deviceList);
 
             _helpText = new Label
@@ -198,7 +198,7 @@ public class Frontend : IDisposable
                 BuildDeviceRow(dev, _rowBuffer);
                 
                 if (_deviceList.Items.Count <= i)
-                    _deviceList.Items.Add(_rowBuffer);
+                    _deviceList.Items.Add(new($"{_rowBuffer}"));
                 else if (!_deviceList.Items[i].Equals(_rowBuffer))
                     _deviceList.Items[i].Set($"{_rowBuffer}");
 
@@ -236,7 +236,7 @@ public class Frontend : IDisposable
             }
             else if (calibrating)
             {
-                _helpText.SetText($"Calibration progress: {_lastCalibrationProgress:P1}\nGently move and rotate your head along all axis, slowly move about your playspace, stop periodically! 🔃");
+                _helpText.SetText($"Calibration progress: {_lastCalibrationProgress:P1}\nGently move and rotate your head along all axis, and slowly move about! 🔃");
             }
             else if (!string.IsNullOrEmpty(activeSerial))
             {

@@ -191,6 +191,7 @@ public class Frontend : IDisposable
             var i = 1;
             var foundActive = false;
             var activeSerial = State.Current.ActiveSerialNumber;
+            var activeTrackingSpace = State.Current.ActiveTrackingSpace;
             foreach (var dev in _deviceCache)
             {
                 _rowBuffer.Clear();
@@ -222,7 +223,7 @@ public class Frontend : IDisposable
             // calibration logic
             var calibrating = State.Current.Calibrating;
             var hasCalibration = !State.Current.ActiveOffset.Value.IsIdentity;
-            _calibrateButton.Disabled = string.IsNullOrEmpty(activeSerial) || calibrating;
+            _calibrateButton.Disabled = string.IsNullOrEmpty(activeSerial) || string.IsNullOrEmpty(activeTrackingSpace) || calibrating;
 
             // set help text based on current app status
             if (!foundActive && !string.IsNullOrEmpty(activeSerial))
@@ -231,7 +232,7 @@ public class Frontend : IDisposable
             }
             else if (string.IsNullOrEmpty(activeSerial))
             {
-                _helpText.SetText($"Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the last column. 🔍");
+                _helpText.SetText($"Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the position column. 🔍");
             }
             else if (calibrating)
             {

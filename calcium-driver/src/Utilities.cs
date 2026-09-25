@@ -79,13 +79,13 @@ public static class Utilities
     {
         Matrix4x4.Decompose(correction, out var correctionScale, out var correctionRotation, out var correctionTranslation);
         var world = Matrix4x4.CreateFromQuaternion(pose.qWorldFromDriverRotation.ToNumerics());
-        world.Translation = pose.vecWorldFromDriverTranslation.ToNumerics() * correctionScale.X;
+        world.Translation = pose.vecWorldFromDriverTranslation.ToNumerics() * correctionScale;
 
         var rotation = Matrix4x4.CreateFromQuaternion(correctionRotation);
         rotation.Translation = correctionTranslation;
         world *= rotation;
 
-        pose.vecPosition = (pose.vecPosition.ToNumerics() * correctionScale.X).ToOpenVR();
+        pose.vecPosition = (pose.vecPosition.ToNumerics() * correctionScale).ToOpenVR();
         pose.qWorldFromDriverRotation = Quaternion.CreateFromRotationMatrix(world).ToOpenVR();
         pose.vecWorldFromDriverTranslation = world.Translation.ToOpenVR();
     }

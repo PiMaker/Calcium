@@ -34,14 +34,18 @@ public class PoseHandler
         var poseMatrix = Utilities.GetPoseMatrix(pose);
         var activeTargetSerial = state.ActiveTrackerSerial;
         var selfSerial = selfDevice.SerialNumber;
-        var isActiveTracker = deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(selfSerial) && selfSerial == activeTargetSerial;
+        var proxyTrackingActive = !string.IsNullOrEmpty(state.ProxyLighthouseSerial);
+        var isActiveTracker = !proxyTrackingActive && deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(selfSerial) && selfSerial == activeTargetSerial;
         if (isActiveTracker) state.ActiveTrackingSpace = selfTrackingSpace;
         var correctedTrackingSpace = state.ActiveTrackingSpace;
 
         if (selfDevice.DeviceClass == OpenVr.DeviceClassTrackingReference)
         {
             // basestations should still be shifted, but aren't needed for calibration
+            // proxy tracking is handled on HMD events since lighthouses don't send enough updates
             selfDevice.LastPose.Set(poseMatrix);
+            if (proxyTrackingActive && state.ProxyLighthouseSerial == selfSerial)
+                state.ProxyLighthouseId = deviceIndex;
             if (!string.IsNullOrEmpty(activeTargetSerial) && selfDevice.TrackingSpace == correctedTrackingSpace)
                 Utilities.ApplyWorldTransform(ref pose, state.ActiveCorrection.Value);
             return;
@@ -61,8 +65,10 @@ public class PoseHandler
                 selfDevice.LastPose.Set(poseMatrix);
 
                 // handle running correction and calibration
-                if (isActiveTracker)
+                if (isActiveTracker && !proxyTrackingActive)
                     HandleValidActiveTrackerPose(state, poseMatrix);
+                else if (proxyTrackingActive && deviceIndex == 0 /* HMD */ && state.ProxyLighthouseId != 0)
+                    HandleValidProxyLighthousePose(state);
             }
             else if (deviceIndex == 0 /* HMD */)
             {
@@ -152,5 +158,56 @@ public class PoseHandler
         var correction = activeInverse * state.ActiveOffset.Value * hmdPose;
         var newCorrection = _filter.ApplyFilter(state.ActiveCorrection.Value, correction, resetFilter, state.SpeedFactor);
         state.ActiveCorrection.Set(newCorrection);
+    }
+
+    void HandleValidProxyLighthousePose(State state)
+    {
+        var proxyLighthouseId = state.ProxyLighthouseId;
+        if (proxyLighthouseId == 0) return;
+        if (!state.Devices.TryGetValue(proxyLighthouseId, out var proxyLighthouse)) return;
+
+        var proxyPose = proxyLighthouse.LastPose.Value;
+        if (proxyPose.IsIdentity) return;
+        if (!Matrix4x4.Invert(proxyPose, out var proxyPoseInverse)) return;
+
+        // Simplified Matrix chain for proxy tracking:
+        // We just place the lighthouse where we know it needs to be in HMD space relative to the origin (0,0,0).
+        var correction = proxyPoseInverse * state.ProxyLighthouseOffset.Value;
+        var newCorrection = _filter.ApplyFilter(state.ActiveCorrection.Value, correction, false, state.SpeedFactor);
+        state.ActiveCorrection.Set(newCorrection);
+    }
+
+    public void EngageProxyTracking(uint proxyDeviceId)
+    {
+        var state = State.Current;
+        if (state.Devices.TryGetValue(proxyDeviceId, out var device))
+        {
+            // Calculate the offset similar to the rigid transform M between HMD pivot and active tracker,
+            // but do so with the current active offset correction applied and between the origin of the
+            // HMD tracking space and the proxy lighthouse pose.
+
+            var lighthousePose = device.LastPose.Value;
+            if (lighthousePose.IsIdentity)
+            {
+                Utilities.Log($"Lighthouse {device.SerialNumber} had an invalid pose, cannot engage proxy tracking.");
+                return;
+            }
+
+            var correction = state.ActiveCorrection.Value;
+            if (correction.IsIdentity)
+            {
+                Utilities.Log($"Active correction is invalid, cannot engage proxy tracking.");
+                return;
+            }
+
+            // TODO: Apply correction matrix to lighthousePose the same way Utilities.ApplyWorldTransform
+            var lighthouseInHmdSpace = lighthousePose;
+
+            state.ProxyLighthouseOffset.Set(lighthouseInHmdSpace);
+            state.ProxyLighthouseSerial = device.SerialNumber;
+            state.ProxyLighthouseId = proxyDeviceId;
+
+            Utilities.Log($"Engaged proxy tracking for lighthouse {device.SerialNumber} with ID {proxyDeviceId}, translation: {state.ProxyLighthouseOffset.Value.Translation}, full: {state.ProxyLighthouseOffset.Value}");
+        }
     }
 }

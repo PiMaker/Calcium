@@ -22,6 +22,9 @@ public class State
                 {
                     ActiveOffset.Set(Matrix4x4.Identity);
                     ActiveCorrection.Set(Matrix4x4.Identity);
+                    ProxyLighthouseOffset.Set(Matrix4x4.Identity);
+                    ProxyLighthouseSerial = null; // disable proxy tracking on Calibrate
+                    ProxyLighthouseId = 0;
                     Utilities.Log("Calibration started.");
                 }
             }
@@ -49,6 +52,7 @@ public class State
     // connected devices and their properties
     public readonly ConcurrentDictionary<uint, Device> Devices = new();
     public volatile string ActiveTrackingSpace = null; // cache of TrackingSpace matching ActiveSerialNumber, set and used by
+    public volatile uint ProxyLighthouseId = 0;
 
     // active matrices
     public PooledAtomicStrongBox<Matrix4x4> ActiveOffset = new(32, Matrix4x4.Identity); // offset of the rigidly mounted tracker from HMD pivot

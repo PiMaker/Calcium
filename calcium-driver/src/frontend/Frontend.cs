@@ -22,7 +22,7 @@ public class Frontend : IDisposable
     Label _versionLabel;
 
     readonly TextBuffer _rowBuffer = new(512);
-    readonly List<Device> _deviceCache = new();
+    KeyValuePair<uint, Device>[] _deviceSnapshot = [];
     DateTimeOffset? _lastSpeedChange;
     float _lastCalibrationProgress;
     bool _playDing;
@@ -47,7 +47,7 @@ public class Frontend : IDisposable
             using var fontSmall = new Font("Segoe UI", 9f);
             using var fontMono = new Font("Consolas", 15f);
 
-            var window = new Window("Calcium", 720, 442, fontUI, icon)
+            var window = new Window("Calcium", 718, 442, fontUI, icon)
             {
                 CanMaximize = false,
                 CanResize = false,
@@ -145,7 +145,7 @@ public class Frontend : IDisposable
             State.Current.OnCalibrationComplete += DispatchDing;
             State.Current.OnCalibrationProgress += ReportCalibrationProgress;
 
-            Application.ScheduleTimer(RefreshDevices, 333);
+            Application.ScheduleTimer(RefreshDevices, 250);
             RefreshDevices();
             if (State.Current.MinimizeOnStartup)
                 window.State = Window.WindowState.Minimized;
@@ -175,20 +175,19 @@ public class Frontend : IDisposable
                 _playDing = false;
             }
 
-            _deviceCache.Clear();
-            foreach (var dev in State.Current.Devices.Values)
-            {
-                if (dev.DeviceClass is OpenVr.DeviceClassController or OpenVr.DeviceClassGenericTracker)
-                    _deviceCache.Add(dev);
-            }
-            _deviceCache.Sort(static (a, b) => a.ID.CompareTo(b.ID));
+            var deviceCount = CollectDevices();
+            if (deviceCount < 0)
+                return; // failed to collect devices, try again next loop
 
             var i = 1;
             var foundActive = false;
             var activeSerial = State.Current.ActiveTrackerSerial;
             var activeTrackingSpace = State.Current.ActiveTrackingSpace;
-            foreach (var dev in _deviceCache)
+            foreach ((var _, var dev) in _deviceSnapshot.AsSpan(0, deviceCount))
             {
+                if (dev.DeviceClass is not OpenVr.DeviceClassController and not OpenVr.DeviceClassGenericTracker)
+                    continue;
+
                 _rowBuffer.Clear();
                 BuildDeviceRow(dev, _rowBuffer);
                 
@@ -231,7 +230,7 @@ public class Frontend : IDisposable
             }
             else if (calibrating)
             {
-                _helpText.SetText($"Calibration progress: {_lastCalibrationProgress:P1} Gently move your head along all axes! 🔃");
+                _helpText.SetText($"Calibration progress: {_lastCalibrationProgress:P1} Slowly move your head along all axes! 🔃");
             }
             else if (!string.IsNullOrEmpty(activeSerial))
             {
@@ -261,20 +260,73 @@ public class Frontend : IDisposable
         }
     }
 
+    int CollectDevices()
+    {
+        var deviceCount = State.Current.Devices.Count;
+        if (_deviceSnapshot.Length < deviceCount)
+            _deviceSnapshot = new KeyValuePair<uint, Device>[deviceCount];
+
+        try
+        {
+            // zero-alloc snapshotting of the concurrent dictionary
+            ((ICollection<KeyValuePair<uint, Device>>)State.Current.Devices).CopyTo(_deviceSnapshot, 0);
+        }
+        catch (ArgumentException)
+        {
+            // device change mid-copy
+            return -1;
+        }
+
+        // alloc-free basic insertion sort
+        int i, j;
+        for (i = 1; i < deviceCount; i++)
+        {
+            var cmp = _deviceSnapshot[i];
+            for (j = i - 1; j >= 0 && _deviceSnapshot[j].Key > cmp.Key; j--)
+                _deviceSnapshot[j + 1] = _deviceSnapshot[j];
+            _deviceSnapshot[j + 1] = cmp;
+        }
+
+        return deviceCount;
+    }
+
     static void BuildDeviceRow(Device d, TextBuffer b)
     {
-        if (d.ID >= 10) b.Append($" {d.ID} ");
-        else b.Append($"  {d.ID} ");
-        AppendField(b, d.SerialNumber, 19);
+        if (d.ID >= 10) b.Append($"{d.ID}  ");
+        else b.Append($" {d.ID}  ");
+        AppendField(b, d.SerialNumber, 12);
         AppendField(b, ClassToString(d.DeviceClass, d.IsKnownHandTracking), 7);
-        AppendField(b, d.TrackingSpace, 6);
+        AppendField(b, d.TrackingSpace, 10, padding: 1);
         AppendLastPosition(b, d);
 
-        static void AppendField(TextBuffer b, string text, int width)
+        if (!d.IsKnownHandTracking)
         {
-            b.Append($"{text}");
-            for (var pad = width - text.Length; pad >= 0; pad--)
+            b.Append($"  ");
+            AppendOutlierState(b, d);
+        }
+
+        static void AppendField(TextBuffer b, string text, int width, int padding = 2)
+        {
+            var length = Math.Min(text.Length, width);
+            b.Append($"{text.AsSpan(0, length)}");
+            for (var pad = width - length + padding; pad > 0; pad--)
                 b.Append($" ");
+        }
+
+        static void AppendOutlierState(TextBuffer b, Device d)
+        {
+            switch (d.Outliers.LastState)
+            {
+                case Outliers.State.Init: b.Append($"Init"); break;
+                case Outliers.State.Drift: b.Append($"Drift"); break;
+                case Outliers.State.Invalid: b.Append($"Invalid"); break;
+                case Outliers.State.Valid: b.Append($"Valid!"); break;
+                case Outliers.State.OutlierTranslation: b.Append($"Transl."); break;
+                case Outliers.State.OutlierRotation: b.Append($"Rotate"); break;
+                case Outliers.State.Recovering: b.Append($"Recover"); break;
+                case Outliers.State.LostTracking: b.Append($"Lost T."); break;
+                default: b.Append($"Unknown"); break;
+            }
         }
 
         static void AppendLastPosition(TextBuffer b, Device d)
@@ -297,7 +349,7 @@ public class Frontend : IDisposable
 
         static string ClassToString(int deviceClass, bool isHand) => deviceClass switch
         {
-            OpenVr.DeviceClassController => isHand ? "Hand" : "Contr.",
+            OpenVr.DeviceClassController => isHand ? "Hand" : "Control",
             OpenVr.DeviceClassGenericTracker => "Tracker",
             _ => deviceClass.ToString(),
         };
@@ -310,9 +362,22 @@ public class Frontend : IDisposable
             State.Current.ActiveTrackerSerial = null; // disabled
             return;
         }
+        
+        var iter = 1;
+        foreach ((var _, var dev) in _deviceSnapshot)
+        {
+            if (dev.DeviceClass is not OpenVr.DeviceClassController and not OpenVr.DeviceClassGenericTracker)
+                continue;
 
-        if (--index < 0 || index >= _deviceCache.Count) return;
-        State.Current.ActiveTrackerSerial = _deviceCache[index].SerialNumber;
+            if (iter == index)
+            {
+                State.Current.ActiveTrackerSerial = dev.SerialNumber;
+                return;
+            }
+
+            if (++iter > index)
+                break;
+        }
     }
 
     void ReportCalibrationProgress(float progress) => _lastCalibrationProgress = progress;

@@ -83,6 +83,21 @@ public static class Utilities
         return raw * world;
     }
 
+    public static void SetPoseMatrix(ref DriverPose_t pose, in Matrix4x4 matrix)
+    {
+        if (Matrix4x4.Decompose(matrix, out _, out var rotation, out var translation))
+        {
+            pose.qWorldFromDriverRotation = Quaternion.Identity.ToOpenVR();
+            pose.vecWorldFromDriverTranslation = default;
+            pose.vecPosition = translation.ToOpenVR();
+            pose.qRotation = rotation.ToOpenVR();
+            pose.vecVelocity = default;
+            pose.vecAcceleration = default;
+            pose.vecAngularVelocity = default;
+            pose.vecAngularAcceleration = default;
+        }
+    }
+
     public static void ApplyWorldTransform(ref DriverPose_t pose, in Matrix4x4 correction)
     {
         Matrix4x4.Decompose(correction, out var correctionScale, out var correctionRotation, out var correctionTranslation);

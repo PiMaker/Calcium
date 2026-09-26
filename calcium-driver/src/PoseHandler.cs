@@ -46,14 +46,12 @@ public class PoseHandler
 
         lock (selfDevice.PoseGate)
         {
-            var isValid = pose.deviceIsConnected != 0 &&
-                            pose.poseIsValid != 0 &&
-                            pose.result == OpenVr.TrackingResultRunningOk &&
-                            !selfDevice.Outliers.IsOutlierAndStore(poseMatrix);
+            var isValid = pose.poseIsValid != 0;
+            var isInterp = pose.result != OpenVr.TrackingResultRunningOk;
+            var outlierState = selfDevice.Outliers.IsOutlier(poseMatrix, ref pose, state.SpeedFactor);
 
-            if (isValid)
+            if (isValid && !isInterp && outlierState == Outliers.State.Valid)
             {
-                // LastPose tracking
                 selfDevice.LastPose.Set(poseMatrix);
 
                 // handle running correction and calibration
@@ -67,8 +65,17 @@ public class PoseHandler
             }
             else
             {
-                // TODO: For debugging trackers that die in UI
-                selfDevice.LastPose.Set(poseMatrix);
+                // for non-HMD outliers, detect tracking loss and handle specially, keep updating LastPose for UI otherwise
+                if (outlierState == Outliers.State.LostTracking)
+                {
+                    var lastPose = selfDevice.LastPose.Value;
+                    Utilities.SetPoseMatrix(ref pose, lastPose);
+                    pose.poseIsValid = 1;
+                }
+                else
+                {
+                    selfDevice.LastPose.Set(poseMatrix);
+                }
             }
 
             if (deviceIndex != 0 /* HMD */ && !string.IsNullOrEmpty(activeTargetSerial) &&

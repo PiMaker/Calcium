@@ -2,9 +2,6 @@ using System.Numerics;
 
 public class PoseHandler
 {
-    const float MaxRotationSpeedCorrecting = 0.75f; // radians per second
-    const float MaxRotationSpeedCalibrating = 1.25f; // radians per second
-
     readonly CorrectionFilter _filter = new();
     readonly Calibration _calibration = new();
     readonly Matrix4x4 _targetRemovalOffset = Matrix4x4.CreateTranslation(0, 9002, 0); // way up high to hide it
@@ -52,8 +49,7 @@ public class PoseHandler
             var isValid = pose.deviceIsConnected != 0 &&
                             pose.poseIsValid != 0 &&
                             pose.result == OpenVr.TrackingResultRunningOk &&
-                            !selfDevice.Outliers.IsOutlierAndStore(poseMatrix,
-                                state.Calibrating ? MaxRotationSpeedCalibrating : MaxRotationSpeedCorrecting * State.Current.SpeedFactor);
+                            !selfDevice.Outliers.IsOutlierAndStore(poseMatrix);
 
             if (isValid)
             {

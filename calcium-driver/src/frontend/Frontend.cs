@@ -47,7 +47,7 @@ public class Frontend : IDisposable
             using var fontSmall = new Font("Segoe UI", 9f);
             using var fontMono = new Font("Consolas", 15f);
 
-            var window = new Window("Calcium", 700, 444, fontUI, icon)
+            var window = new Window("Calcium", 720, 442, fontUI, icon)
             {
                 CanMaximize = false,
                 CanResize = false,
@@ -76,9 +76,8 @@ public class Frontend : IDisposable
             _helpText = new Label
             {
                 Width = BaseLayout.Fill,
-                Height = 52,
+                Height = 28,
                 Foreground = ForegroundColor,
-                Background = BackgroundColor,
             };
             layout.Children.Add(_helpText);
 
@@ -94,7 +93,6 @@ public class Frontend : IDisposable
                 Width = 20,
                 Height = 40,
                 Foreground = ForegroundColor,
-                Background = BackgroundColor,
                 Margin = new Margin(6, 0, -4, 0),
             };
             var minimizeLabel = new Label("Minimize on Startup", centerVertically: true)
@@ -102,7 +100,6 @@ public class Frontend : IDisposable
                 Width = BaseLayout.Fill,
                 Height = 37,
                 Foreground = ForegroundColor,
-                Background = BackgroundColor,
             };
             buttons.Children.Add(_minimizeOnStartup);
             buttons.Children.Add(minimizeLabel);
@@ -115,7 +112,6 @@ public class Frontend : IDisposable
                 Width = BaseLayout.Fill,
                 Height = 40,
                 Foreground = Color.FromArgb(160, 160, 160),
-                Background = BackgroundColor,
                 Margin = new Margin(horizontal: 8),
             };
             buttons.Children.Add(_versionLabel);
@@ -126,7 +122,6 @@ public class Frontend : IDisposable
                 Width = 190,
                 Height = 29,
                 Foreground = ForegroundColor,
-                Background = BackgroundColor,
             };
             speedLayout.Children.Add(_speedLabel);
             _speedSlider = new Slider()
@@ -228,22 +223,22 @@ public class Frontend : IDisposable
             // set help text based on current app status
             if (!foundActive && !string.IsNullOrEmpty(activeSerial))
             {
-                _helpText.SetText($"A mounted tracker was saved by serial number ({activeSerial}), but isn't available yet. Make sure it's turned on and tracking! ⌛");
+                _helpText.SetText($"Waiting on tracker saved by serial number ({activeSerial}). Make sure it's tracking! ⌛");
             }
             else if (string.IsNullOrEmpty(activeSerial))
             {
-                _helpText.SetText($"Select the device that you have attached to your headset in the list above. To identify it, try moving your head and watching the position column. 🔍");
+                _helpText.SetText($"Select the device that you have attached to your headset in the list above. 🔍");
             }
             else if (calibrating)
             {
-                _helpText.SetText($"Calibration progress: {_lastCalibrationProgress:P1}\nGently move and rotate your head along all axis, and slowly move about! 🔃");
+                _helpText.SetText($"Calibration progress: {_lastCalibrationProgress:P1} Gently move your head along all axes! 🔃");
             }
             else if (!string.IsNullOrEmpty(activeSerial))
             {
                 if (!hasCalibration)
-                    _helpText.SetText($"No calibration found. Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️");
+                    _helpText.SetText($"Click 'Calibrate' and follow the instructions to perform the one-time setup. ⚙️");
                 else
-                    _helpText.SetText($"Calibration found for active device. Everything should be working! ✔️");
+                    _helpText.SetText($"Calibration found for {activeSerial}. Everything should be working! ✔️");
             }
             else
             {
@@ -270,9 +265,9 @@ public class Frontend : IDisposable
     {
         if (d.ID >= 10) b.Append($" {d.ID} ");
         else b.Append($"  {d.ID} ");
-        AppendField(b, d.TrackingSpace, 11);
         AppendField(b, d.SerialNumber, 19);
-        AppendField(b, ClassToString(d.DeviceClass), 7);
+        AppendField(b, ClassToString(d.DeviceClass, d.IsKnownHandTracking), 7);
+        AppendField(b, d.TrackingSpace, 6);
         AppendLastPosition(b, d);
 
         static void AppendField(TextBuffer b, string text, int width)
@@ -294,15 +289,15 @@ public class Frontend : IDisposable
             var pos = v.Translation;
             if (pos.X < 0) b.Append($"{pos.X:F1}");
             else b.Append($" {pos.X:F1}");
-            if (pos.Y < 0) b.Append($"{pos.Y:F1}");
-            else b.Append($" {pos.Y:F1}");
-            if (pos.Z < 0) b.Append($"{pos.Z:F1}");
-            else b.Append($" {pos.Z:F1}");
+            if (pos.Y < 0) b.Append($" {pos.Y:F1}");
+            else b.Append($"  {pos.Y:F1}");
+            if (pos.Z < 0) b.Append($" {pos.Z:F1}");
+            else b.Append($"  {pos.Z:F1}");
         }
 
-        static string ClassToString(int deviceClass) => deviceClass switch
+        static string ClassToString(int deviceClass, bool isHand) => deviceClass switch
         {
-            OpenVr.DeviceClassController => "Ctrl",
+            OpenVr.DeviceClassController => isHand ? "Hand" : "Contr.",
             OpenVr.DeviceClassGenericTracker => "Tracker",
             _ => deviceClass.ToString(),
         };

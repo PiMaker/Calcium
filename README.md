@@ -83,6 +83,8 @@ Logs and settings are stored at `C:\Users\$USER\AppData\Local\Calcium`.
 
 The `Correction Speed` slider can be used to adjust how quickly drift is being corrected. Think of it as the sensitivity to discrepancies in HMD and Tracker data. Reduce the value to more slowly align spaces, and require more stillness for change to kick in. Set it higher to align more quickly and at higher velocities, which may introduce overshoot. At higher settings, moving your head may lead to unintended motion on trackers farther away from the pivot, for example on your feet. The default value is generally a good choice.
 
+Calcium will override the pose of devices moved to `0,0,N` with the last known good (or interpolated) pose. That location is how SteamVR/Lighthouse seems to indicate tracking loss. In practice, this means that while Calcium is running, devices snapping to origin after tracking loss will instead stay glued to their last known good position.
+
 ---
 
 </p></details>

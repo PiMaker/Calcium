@@ -66,6 +66,14 @@ public static class Utilities
     public static float RotationAngle(Matrix4x4 m) => RotationAngle(Quaternion.CreateFromRotationMatrix(m));
     public static float RotationAngle(Quaternion q) => 2f * MathF.Acos(Math.Clamp(MathF.Abs(q.W), 0f, 1f));
 
+    public static Vector3 EulerAngles(Quaternion q)
+    {
+        float x = MathF.Atan2(2f * (q.W * q.X + q.Y * q.Z), 1f - 2f * (q.X * q.X + q.Y * q.Y));
+        float y = MathF.Asin(Math.Clamp(2f * (q.W * q.Y - q.Z * q.X), -1f, 1f));
+        float z = MathF.Atan2(2f * (q.W * q.Z + q.X * q.Y), 1f - 2f * (q.Y * q.Y + q.Z * q.Z));
+        return new Vector3(x, y, z) * (180f / MathF.PI);
+    }
+
     public static Matrix4x4 GetPoseMatrix(in DriverPose_t pose)
     {
         var raw = Matrix4x4.CreateFromQuaternion(pose.qRotation.ToNumerics());

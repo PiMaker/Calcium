@@ -123,8 +123,6 @@ public class Calibration
 
         if (!SolveRotation(out var rotation) || !SolveSimilarity(rotation, out var translation, out var scale)) return false;
 
-        // TODO: Average scale across XYZ for a uniform approximation?
-
         result = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation);
         result.Translation = translation;
         return true;

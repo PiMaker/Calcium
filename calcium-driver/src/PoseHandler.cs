@@ -121,7 +121,7 @@ public class PoseHandler
                 if (!final.IsIdentity && Matrix4x4.Decompose(final, out var scale, out var rotation, out var translation))
                 {
                     // log some interesting stuff
-                    Utilities.Log($"Result - Scale: {scale}, Rotation: {rotation}, Translation: {translation}");
+                    Utilities.Log($"Result - Scale: {scale}, Rotation: {Utilities.EulerAngles(rotation)}, Translation: {translation}");
                     Utilities.Log($"Gravity error - {_calibration.CheckGravityAlignment(rotation)}deg RMS");
                 }
                 else

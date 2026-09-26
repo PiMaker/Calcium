@@ -1,4 +1,4 @@
 public static class CalciumVersion
 {
-    public const string Version = "0";
+    public const string Version = "1";
 }

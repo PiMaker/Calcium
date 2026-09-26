@@ -35,6 +35,10 @@ jobs:
           $content = (Get-Content $path -Raw) -replace 'public const string Version = "\d+";', ('public const string Version = "${{ steps.ver.outputs.n }}";')
           Set-Content $path $content -NoNewline
 
+      - name: Build
+        shell: pwsh
+        run: ./build-installer.ps1
+
       - name: Commit version bump
         shell: pwsh
         run: |
@@ -43,10 +47,6 @@ jobs:
           git add Version.cs
           git commit -m "version ${{ steps.ver.outputs.n }}"
           git push
-
-      - name: Build
-        shell: pwsh
-        run: ./build-installer.ps1
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

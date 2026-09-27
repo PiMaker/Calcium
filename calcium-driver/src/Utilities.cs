@@ -109,6 +109,8 @@ public static class Utilities
         world *= rotation;
 
         pose.vecPosition = (pose.vecPosition.ToNumerics() * correctionScale).ToOpenVR();
+        pose.vecVelocity = (pose.vecVelocity.ToNumerics() * correctionScale).ToOpenVR();
+        pose.vecAcceleration = (pose.vecAcceleration.ToNumerics() * correctionScale).ToOpenVR();
         pose.qWorldFromDriverRotation = Quaternion.CreateFromRotationMatrix(world).ToOpenVR();
         pose.vecWorldFromDriverTranslation = world.Translation.ToOpenVR();
     }

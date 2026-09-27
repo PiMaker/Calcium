@@ -15,7 +15,7 @@ public class CorrectionFilter
 
     Vector3 _translation;
     Quaternion _rotation;
-    Vector3 _scale;
+    float _scale;
 
     public Matrix4x4 ApplyFilter(in Matrix4x4 prevCorrection, in Matrix4x4 newCorrection, bool resetFilter, float speed)
     {
@@ -33,8 +33,11 @@ public class CorrectionFilter
 
     private void Init(in Matrix4x4 initialData)
     {
-        if (Matrix4x4.Decompose(initialData, out _scale, out _rotation, out _translation))
+        if (Matrix4x4.Decompose(initialData, out var scale, out _rotation, out _translation))
+        {
+            _scale = scale.X;
             _initialized = true;
+        }
 
         _lastTime = Stopwatch.GetTimestamp();
     }
@@ -56,7 +59,7 @@ public class CorrectionFilter
 
         _translation = Vector3.Lerp(_translation, newTranslation, RateToAlpha(speed * TranslationSpeed, dt));
         _rotation = Quaternion.Slerp(_rotation, newRotation, RateToAlpha(speed * RotationSpeed, dt));
-        _scale = Vector3.Lerp(_scale, newScale, RateToAlpha(speed * ScaleSpeed, dt));
+        _scale = float.Lerp(_scale, newScale.X, RateToAlpha(speed * ScaleSpeed, dt));
 
         var result = Matrix4x4.CreateScale(_scale) * Matrix4x4.CreateFromQuaternion(_rotation);
         result.Translation = _translation;

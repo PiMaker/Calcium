@@ -154,11 +154,7 @@ public class PoseHandler
         //   -> we finally move it all into HMD's space
         var correction = activeInverse * state.ActiveOffset.Value * hmdPose;
 
-        // if aligned, strip roll and pitch to reduce noise
-        if (state.GravityAligned)
-            correction = Utilities.YawOnly(correction);
-
-        var newCorrection = _filter.ApplyFilter(state.ActiveCorrection.Value, correction, resetFilter, state.SpeedFactor);
+        var newCorrection = _filter.ApplyFilter(state.ActiveCorrection.Value, correction, hmdPose.Translation, state.GravityAligned, resetFilter, state.SpeedFactor);
         state.ActiveCorrection.Set(newCorrection);
     }
 }

@@ -13,58 +13,68 @@ public class CorrectionFilter
     bool _initialized;
     long _lastTime;
 
-    Vector3 _translation;
     Quaternion _rotation;
     float _scale;
 
-    public Matrix4x4 ApplyFilter(in Matrix4x4 prevCorrection, in Matrix4x4 newCorrection, bool resetFilter, float speed)
+    public Matrix4x4 ApplyFilter(in Matrix4x4 prevCorrection, Matrix4x4 newCorrection, Vector3 headPosition, bool gravityAligned, bool resetFilter, float speed)
     {
-        var translationDelta = Vector3.Distance(prevCorrection.Translation, newCorrection.Translation);
-        var angularDelta = Matrix4x4.Invert(newCorrection, out var inverted) ? Utilities.RotationAngle(prevCorrection * inverted) : 0f;
-        if (translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold || resetFilter)
+        if (!Matrix4x4.Invert(newCorrection, out var inverted)) return prevCorrection;
+        var anchor = Vector3.Transform(headPosition, inverted); // current head position in tracker coordinate space given by new data at 100% application
+        if (gravityAligned)
+        {
+            newCorrection = Utilities.YawOnly(newCorrection);
+            newCorrection.Translation = headPosition - Vector3.TransformNormal(anchor, newCorrection);
+        }
+
+        var translationDelta = Vector3.Distance(Vector3.Transform(anchor, prevCorrection), headPosition);
+        var angularDelta = Matrix4x4.Decompose(prevCorrection * inverted, out _, out var deltaRotation, out _) ? Utilities.RotationAngle(deltaRotation) : 0f;
+        if (!_initialized || translationDelta > TrackingJumpThreshold || angularDelta > TrackingJumpRotThreshold || resetFilter)
         {
             Utilities.Log($"Tracking jump detected: {translationDelta}m, {angularDelta:F4}rad");
             Init(newCorrection);
             return newCorrection;
         }
 
-        return ComputeSmoothed(newCorrection, speed);
+        return ComputeSmoothed(prevCorrection, newCorrection, anchor, headPosition, speed);
     }
 
     private void Init(in Matrix4x4 initialData)
     {
-        if (Matrix4x4.Decompose(initialData, out var scale, out _rotation, out _translation))
+        if (Matrix4x4.Decompose(initialData, out var scale, out _rotation, out var translation))
         {
             _scale = scale.X;
             _initialized = true;
 
-            Utilities.Log($"Filter initialized with translation: {_translation}, rotation: {Utilities.EulerAngles(_rotation)}, scale: {_scale}");
+            Utilities.Log($"Filter initialized with translation: {translation}, rotation: {Utilities.EulerAngles(_rotation)}, scale: {_scale}");
         }
 
         _lastTime = Stopwatch.GetTimestamp();
     }
 
-    private Matrix4x4 ComputeSmoothed(in Matrix4x4 newData, float speed)
+    private Matrix4x4 ComputeSmoothed(in Matrix4x4 prevCorrection, in Matrix4x4 newCorrection, Vector3 anchor, Vector3 headPosition, float speed)
     {
         var now = Stopwatch.GetTimestamp();
         var dt = (now - _lastTime) / (float)Stopwatch.Frequency;
 
         if (!_initialized)
-            return newData;
+            return newCorrection;
 
         _lastTime = now;
 
-        if (!Matrix4x4.Decompose(newData, out var newScale, out var newRotation, out var newTranslation))
-            return newData;
+        if (!Matrix4x4.Decompose(newCorrection, out var newScale, out var newRotation, out _))
+            return newCorrection;
 
         static float RateToAlpha(float rate, float dt) => 1f - MathF.Exp(-rate * dt);
 
-        _translation = Vector3.Lerp(_translation, newTranslation, RateToAlpha(speed * TranslationSpeed, dt));
+        var headDelta = headPosition - Vector3.Transform(anchor, prevCorrection);
         _rotation = Quaternion.Slerp(_rotation, newRotation, RateToAlpha(speed * RotationSpeed, dt));
         _scale = float.Lerp(_scale, newScale.X, RateToAlpha(speed * ScaleSpeed, dt));
 
+        // Compensate rotation and scale at the head, not the playspace origin.
         var result = Matrix4x4.CreateScale(_scale) * Matrix4x4.CreateFromQuaternion(_rotation);
-        result.Translation = _translation;
+        result.Translation = prevCorrection.Translation + headDelta * RateToAlpha(speed * TranslationSpeed, dt)
+            + Vector3.TransformNormal(anchor, prevCorrection - result);
+
         return result;
     }
 }

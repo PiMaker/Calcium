@@ -107,7 +107,7 @@ public class State
             Utilities.Log($"Read settings from disk from {path}");
 
             if (Matrix4x4.Decompose(ActiveOffset.Value, out var scale, out var rotation, out var translation))
-                Utilities.Log($"Loaded - Scale: {scale}, Rotation: {Utilities.EulerAngles(rotation)}, Translation: {translation}");
+                Utilities.Log($"Loaded - Scale: {scale}, Rotation: {Utilities.EulerAngles(rotation)}, Translation: {translation}, Gravity Aligned: {GravityAligned}");
         }
         catch (Exception ex)
         {

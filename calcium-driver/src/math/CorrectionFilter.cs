@@ -7,7 +7,7 @@ public class CorrectionFilter
     const float RotationSpeed = 0.04f;
     const float ScaleSpeed = 0.0025f;
 
-    const float TrackingJumpThreshold = 0.75f; // off by more than 75cm - consider tracking jump and correct immediately
+    const float TrackingJumpThreshold = 0.70f; // off by more than 70cm - consider tracking jump and correct immediately
     const float TrackingJumpRotThreshold = (float)Math.PI / 2f;
 
     bool _initialized;

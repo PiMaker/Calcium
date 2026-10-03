@@ -37,6 +37,8 @@ public class CorrectionFilter
         {
             _scale = scale.X;
             _initialized = true;
+
+            Utilities.Log($"Filter initialized with translation: {_translation}, rotation: {Utilities.EulerAngles(_rotation)}, scale: {_scale}");
         }
 
         _lastTime = Stopwatch.GetTimestamp();

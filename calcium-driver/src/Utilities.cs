@@ -57,21 +57,37 @@ public static class Utilities
 
     // Math Helpers:
     
-    public static HmdVector3d_t ToOpenVR(this Vector3 v) => new() { x = v.X, y = v.Y, z = v.Z };
-    public static HmdQuaternion_t ToOpenVR(this Quaternion q) => new() { x = q.X, y = q.Y, z = q.Z, w = q.W };
-    public static Vector3 ToNumerics(this in HmdVector3d_t v) => new((float)v.x, (float)v.y, (float)v.z);
-    public static Quaternion ToNumerics(this in HmdQuaternion_t q) => new((float)q.x, (float)q.y, (float)q.z, (float)q.w);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static HmdVector3d_t ToOpenVR(this in Vector3 v) => new() { x = v.X, y = v.Y, z = v.Z };
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static HmdQuaternion_t ToOpenVR(this in Quaternion q) => new() { x = q.X, y = q.Y, z = q.Z, w = q.W };
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static Vector3 ToNumerics(this in HmdVector3d_t v) => new((float)v.x, (float)v.y, (float)v.z);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static Quaternion ToNumerics(this in HmdQuaternion_t q) => new((float)q.x, (float)q.y, (float)q.z, (float)q.w);
 
     // Rotation angle in radians, independent of sign
-    public static float RotationAngle(Matrix4x4 m) => RotationAngle(Quaternion.CreateFromRotationMatrix(m));
-    public static float RotationAngle(Quaternion q) => 2f * MathF.Acos(Math.Clamp(MathF.Abs(q.W), 0f, 1f));
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static float RotationAngle(in Matrix4x4 m) => RotationAngle(Quaternion.CreateFromRotationMatrix(m));
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static float RotationAngle(in Quaternion q) => 2f * MathF.Acos(Math.Clamp(MathF.Abs(q.W), 0f, 1f));
 
-    public static Vector3 EulerAngles(Quaternion q)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Vector3 EulerAngles(in Quaternion q)
     {
         float x = MathF.Atan2(2f * (q.W * q.X + q.Y * q.Z), 1f - 2f * (q.X * q.X + q.Y * q.Y));
         float y = MathF.Asin(Math.Clamp(2f * (q.W * q.Y - q.Z * q.X), -1f, 1f));
         float z = MathF.Atan2(2f * (q.W * q.Z + q.X * q.Y), 1f - 2f * (q.Y * q.Y + q.Z * q.Z));
         return new Vector3(x, y, z) * (180f / MathF.PI);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Matrix4x4 YawOnly(in Matrix4x4 m)
+    {
+        if (!Matrix4x4.Decompose(m, out var scale, out var rotation, out var translation))
+            return m;
+
+        // extract yaw from the rotation
+        var lenSq = rotation.Y * rotation.Y + rotation.W * rotation.W;
+        var yaw = lenSq < 1e-10f ? Quaternion.Identity : Quaternion.Normalize(new Quaternion(0, rotation.Y, 0, rotation.W));
+
+        var result = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(yaw);
+        result.Translation = translation;
+        return result;
     }
 
     public static Matrix4x4 GetPoseMatrix(in DriverPose_t pose)

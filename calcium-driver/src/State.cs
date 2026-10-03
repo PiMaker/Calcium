@@ -52,6 +52,7 @@ public class State
     // active matrices
     public PooledAtomicStrongBox<Matrix4x4> ActiveOffset = new(32, Matrix4x4.Identity); // offset of the rigidly mounted tracker from HMD pivot
     public PooledAtomicStrongBox<Matrix4x4> ActiveCorrection = new(32, Matrix4x4.Identity); // active world-space correction matrix
+    public volatile bool GravityAligned = false; // true if "up" is driver-constrained to gravity allowing Yaw-only correction
 
     public void InsertDevice(uint id)
     {
@@ -76,6 +77,7 @@ public class State
         var ini =
             $"TargetSerialNumber = {ActiveTrackerSerial ?? ""}{Environment.NewLine}" +
             $"ActiveOffset = {Utilities.SerializeMatrix(offset)}{Environment.NewLine}" +
+            $"GravityAligned = {GravityAligned}{Environment.NewLine}" +
             $"MinimizeOnStartup = {MinimizeOnStartup}{Environment.NewLine}" +
             $"Speed = {Speed}";
         File.WriteAllText(path, ini);
@@ -98,6 +100,7 @@ public class State
                 var value = parts[1].Trim();
                 if (key == "TargetSerialNumber") ActiveTrackerSerial = value;
                 if (key == "ActiveOffset") ActiveOffset.Set(Utilities.DeserializeMatrix(value).GetValueOrDefault(Matrix4x4.Identity));
+                if (key == "GravityAligned") GravityAligned = bool.Parse(value);
                 if (key == "MinimizeOnStartup") MinimizeOnStartup = bool.Parse(value);
                 if (key == "Speed") Speed = int.Parse(value);
             }

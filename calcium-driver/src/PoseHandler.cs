@@ -109,9 +109,10 @@ public class PoseHandler
         if (state.Calibrating)
         {
             // update actual calibration with new pose data
-            if (_calibration.Update(activeInverse, hmdPose, out var result))
+            if (_calibration.Update(activeInverse, hmdPose, out var result, out bool gravityAligned))
             {
                 state.ActiveOffset.Set(result);
+                state.GravityAligned = gravityAligned;
                 resetFilter = true;
             }
 
@@ -128,8 +129,7 @@ public class PoseHandler
                 if (!final.IsIdentity && Matrix4x4.Decompose(final, out var scale, out var rotation, out var translation))
                 {
                     // log some interesting stuff
-                    Utilities.Log($"Result - Scale: {scale}, Rotation: {Utilities.EulerAngles(rotation)}, Translation: {translation}");
-                    Utilities.Log($"Gravity error - {_calibration.CheckGravityAlignment(rotation)}deg RMS");
+                    Utilities.Log($"Result - Scale: {scale}, Rotation: {Utilities.EulerAngles(rotation)}, Translation: {translation}, Gravity Aligned: {gravityAligned}");
                 }
                 else
                 {
@@ -153,6 +153,11 @@ public class PoseHandler
         // - hmdPose: from 0,0,0 to HMD's position/rotation
         //   -> we finally move it all into HMD's space
         var correction = activeInverse * state.ActiveOffset.Value * hmdPose;
+
+        // if aligned, strip roll and pitch to reduce noise
+        if (state.GravityAligned)
+            correction = Utilities.YawOnly(correction);
+
         var newCorrection = _filter.ApplyFilter(state.ActiveCorrection.Value, correction, resetFilter, state.SpeedFactor);
         state.ActiveCorrection.Set(newCorrection);
     }

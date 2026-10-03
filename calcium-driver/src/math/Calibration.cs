@@ -9,6 +9,7 @@ using System.Collections.Concurrent;
 public class Calibration
 {
     const float MinimumRotation = 0.0225f; // Ignore pairs with very small motion
+    const double GravityAlignmentThreshold = 2d; // degrees, maximum allowed deviation to count as gravity-aligned
 
     Matrix4x4 _targetInverse;
     Matrix4x4 _prevHmdInverse;
@@ -75,9 +76,10 @@ public class Calibration
     //    units: scale * (a * Rm).
     //    Each pair gives 3 equations in the 4 unknowns (t, scale), stacked
     //    into normal equations and solved as a linear system.
-    public bool Update(Matrix4x4 targetInverse, Matrix4x4 hmd, out Matrix4x4 result)
+    public bool Update(Matrix4x4 targetInverse, Matrix4x4 hmd, out Matrix4x4 result, out bool gravityAligned)
     {
         result = Matrix4x4.Identity;
+        gravityAligned = false;
 
         if (!Matrix4x4.Invert(hmd, out var currentHmdInverse)) return false;
 
@@ -125,6 +127,8 @@ public class Calibration
 
         result = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation);
         result.Translation = translation;
+
+        gravityAligned = CheckGravityAlignment(rotation) < GravityAlignmentThreshold;
         return true;
     }
 
@@ -387,8 +391,8 @@ public class Calibration
     // angle of that prediction over all pairs measures how well the spaces
     // agree about vertical. A large residual means roll/pitch drift in either
     // tracking system, or a non-gravity-aligned space, and the mount solve
-    // may be biased.
-    public double CheckGravityAlignment(Quaternion rotation)
+    // may be biased (or the systems not gravity aligned).
+    private double CheckGravityAlignment(Quaternion rotation)
     {
         var sumSquares = 0d;
         foreach (var (_, _, trackerUp, hmdUp) in Pairs)

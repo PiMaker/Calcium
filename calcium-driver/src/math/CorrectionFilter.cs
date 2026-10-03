@@ -16,6 +16,8 @@ public class CorrectionFilter
     Quaternion _rotation;
     float _scale;
 
+    public void UpdateTime() => Interlocked.Exchange(ref _lastTime, Stopwatch.GetTimestamp());
+
     public Matrix4x4 ApplyFilter(in Matrix4x4 prevCorrection, Matrix4x4 newCorrection, Vector3 headPosition, bool gravityAligned, bool resetFilter, float speed)
     {
         if (!Matrix4x4.Invert(newCorrection, out var inverted)) return prevCorrection;
@@ -47,8 +49,6 @@ public class CorrectionFilter
 
             Utilities.Log($"Filter initialized with translation: {translation}, rotation: {Utilities.EulerAngles(_rotation)}, scale: {_scale}");
         }
-
-        _lastTime = Stopwatch.GetTimestamp();
     }
 
     private Matrix4x4 ComputeSmoothed(in Matrix4x4 prevCorrection, in Matrix4x4 newCorrection, Vector3 anchor, Vector3 headPosition, float speed)
@@ -58,8 +58,6 @@ public class CorrectionFilter
 
         if (!_initialized)
             return newCorrection;
-
-        _lastTime = now;
 
         if (!Matrix4x4.Decompose(newCorrection, out var newScale, out var newRotation, out _))
             return newCorrection;

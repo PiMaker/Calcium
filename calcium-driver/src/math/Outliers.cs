@@ -5,10 +5,10 @@ public class Outliers
 {
     const int HistoryLength = 16;
     const int RecoverySamples = 5;
-    const float MaxRotationSpeed = 0.5f;
-    const float MaxTranslationSpeed = 0.75f;
+    const float MaxRotationSpeed = 0.55f;
+    const float MaxTranslationSpeed = 0.8f;
     const float SustainedTranslationSpeed = 0.75f;
-    const float MinimumStraightness = 0.998f;
+    const float MinimumStraightness = 0.99825f;
 
     readonly ContinuousRingBuffer<(Matrix4x4 Matrix, long Time)> _samples = new(HistoryLength);
     int _recoveryCounter = 0;

@@ -89,6 +89,10 @@ public class PoseHandler
                     Utilities.ApplyWorldTransform(ref pose, _targetRemovalOffset);
             }
         }
+
+        // always set last update time for the filter, even if the pose was invalid or rejected
+        if (isActiveTracker)
+            _filter.UpdateTime();
     }
 
     // must hold activeDevice.PoseLock, updates correction matrix

@@ -43,6 +43,7 @@ public class State
     // user preferences
     public volatile int Speed = 100; // default speed value (0-200)
     public float SpeedFactor => Speed / 100f;
+    public volatile bool CalibrateScale = false;
     public bool MinimizeOnStartup = false;
 
     // connected devices and their properties
@@ -79,7 +80,8 @@ public class State
             $"ActiveOffset = {Utilities.SerializeMatrix(offset)}{Environment.NewLine}" +
             $"GravityAligned = {GravityAligned}{Environment.NewLine}" +
             $"MinimizeOnStartup = {MinimizeOnStartup}{Environment.NewLine}" +
-            $"Speed = {Speed}";
+            $"Speed = {Speed}{Environment.NewLine}" +
+            $"CalibrateScale = {CalibrateScale}";
         File.WriteAllText(path, ini);
         Utilities.Log($"Wrote settings to disk at {path}");
     }
@@ -89,6 +91,7 @@ public class State
         var path = Path.Combine(Utilities.GetDataPath(), "settings.ini");
         try
         {
+            Utilities.Log($"Reading settings from disk at {path}:");
             var ini = File.ReadAllText(path);
             var lines = ini.Split([Environment.NewLine], StringSplitOptions.None);
             foreach (var line in lines)
@@ -103,11 +106,14 @@ public class State
                 if (key == "GravityAligned") GravityAligned = bool.Parse(value);
                 if (key == "MinimizeOnStartup") MinimizeOnStartup = bool.Parse(value);
                 if (key == "Speed") Speed = int.Parse(value);
+                if (key == "CalibrateScale") CalibrateScale = bool.Parse(value);
+
+                Utilities.Log($" - {key} = {value}");
             }
             Utilities.Log($"Read settings from disk from {path}");
 
             if (Matrix4x4.Decompose(ActiveOffset.Value, out var scale, out var rotation, out var translation))
-                Utilities.Log($"Loaded - Scale: {scale}, Rotation: {Utilities.EulerAngles(rotation)}, Translation: {translation}, Gravity Aligned: {GravityAligned}");
+                Utilities.Log($"Loaded - Scale: {scale}, Rotation: {Utilities.EulerAngles(rotation)}, Translation: {translation}");
         }
         catch (Exception ex)
         {

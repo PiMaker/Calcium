@@ -266,6 +266,11 @@ public class Calibration
     // builds the normal equations of a plain linear least-squares problem.
     // x[0..2] is t, x[3] is scale; a non-positive scale would mirror or
     // collapse target space, which is nonsense, so reject it.
+    //
+    // With State.CalibrateScale disabled, scale is assumed 1 instead of
+    // solved: the scale term moves to the right-hand side, and a single
+    // exact prior row (decoupled from the t columns) pins x[3] = 1 so the
+    // same 4x4 system and Solve() work unchanged.
     bool SolveSimilarity(Quaternion rotation, out Vector3 translation, out float scale)
     {
         var rm = Matrix4x4.CreateFromQuaternion(rotation);
@@ -275,6 +280,14 @@ public class Calibration
         Span<double> u = stackalloc double[3];
         Span<double> bv = stackalloc double[3];
         Span<double> row = stackalloc double[4];
+
+        var calibrateScale = State.Current.CalibrateScale;
+        if (!calibrateScale)
+        {
+            normal[3, 3] += 1d;
+            rhs[3] += 1d;
+        }
+
         foreach (var (a, b, _, _) in Pairs)
         {
             // Per pair, one scalar equation per output component of
@@ -285,6 +298,7 @@ public class Calibration
             // - bv: b, the HMD-side translation (equation right-hand side)
             // - row: the output equation's coefficients - column `output` of
             //   (Id - Rb) for t, component `output` of a * Rm for scale
+            //   (fixed-scale mode: scale term subtracted from bv instead)
             // Each row contributes row * row^T to the normal matrix and
             // row * b to the right-hand side; Solve() then solves the system.
             var rotatedA = Vector3.TransformNormal(a.Translation, rm);
@@ -296,10 +310,11 @@ public class Calibration
             for (var output = 0; output < 3; output++)
             {
                 row[0] = c[0, output]; row[1] = c[1, output];
-                row[2] = c[2, output]; row[3] = u[output];
+                row[2] = c[2, output]; row[3] = calibrateScale ? u[output] : 0d;
+                var bOut = calibrateScale ? bv[output] : bv[output] - u[output];
                 for (var i = 0; i < 4; i++)
                 {
-                    rhs[i] += bv[output] * row[i];
+                    rhs[i] += bOut * row[i];
                     for (var j = 0; j < 4; j++)
                         normal[i, j] += row[i] * row[j];
                 }

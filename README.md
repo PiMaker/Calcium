@@ -48,9 +48,9 @@ To uninstall, run the installer and click "Uninstall". The button will be disabl
 - Turn on the tracker on your headset and wait for it to appear. It's okay to have other trackers active too. If you're having trouble identifying the right device, try moving it (that is, your head) and observing the location display on each line.
 - Select your tracker in the list and click `Calibrate`.
 - _This is the most important bit!_ Calibrating works similar to other playspace alignment software, but because it's a one-time setup for Calcium, I recommend taking your time. A good quality calibration will last you many play sessions!
-    - Move slowly and pause for a second regularly.
-    - Rotate your head around all 3 axes (yaw, pitch, roll) gently.
-    - Move about in your playspace. Try to do the rotation dance in a few corners far apart to capture scale and translation accurately.
+    - Rotate around yourself 360 degrees, very slowly.
+    - As you do, try to move in all 3 cardinal directions of your playspace: Up/Down, Left/Right, Forward/Backward.
+    - Move about in your playspace gently to finish, while tilting your head.
     - Watch the progress counter. If it stalls, you may be moving or rotating too quickly!
     - I find it useful to hold a controller or other tracker in your hand as you go. It will give you an immediate visual indicator of the calibration quality, and what improves it. Note that jitter is expected at this stage, it will smooth itself out after the calibration step!
 - Once you hear the Ding, calibration is complete! You can now set the "Minimize on Startup" toggle and forget about the control panel forever*!
